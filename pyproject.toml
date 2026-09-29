@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ivar-smp"
-version = "0.1.0"
+version = "0.1.1"
 description = "IVAR SMP (Social Media Prepper): brief-aware AI metadata for finished images, written into the files"
 requires-python = ">=3.11"
 dependencies = [
