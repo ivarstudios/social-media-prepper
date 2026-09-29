@@ -55,7 +55,7 @@ async function loadStatus() {
   let s;
   try { s = await api("/api/status"); } catch (e) { $("#statusDot").className = "dot bad"; return null; }
   state.status = s;
-  $("#versionTag").textContent = "v" + s.version;
+  $$(".version-tag").forEach(el => (el.textContent = "v" + s.version));
   $("#statusDot").className = "dot " + (!s.exiftool ? "bad" : s.ready ? "ok" : "warn");
   $("#setupBtn").title = s.ready ? "Ready" : "Something needs setting up";
   renderSetup(s);

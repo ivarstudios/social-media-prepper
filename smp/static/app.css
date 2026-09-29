@@ -48,6 +48,7 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .brand img { width: 96px; height: auto; }
 .brand-name { font-size: 22px; margin-top: 12px; letter-spacing: .02em; }
 .brand-sub { color: var(--muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; margin-top: 2px; }
+.brand-ver { color: var(--muted); font-size: 11px; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .side-head { padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; }
 #rootName { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .folders { flex: 1; overflow: auto; }
