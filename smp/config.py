@@ -27,6 +27,7 @@ DEFAULTS: dict = {
     "credit": "",
     "copyright": "",
     "language": "en",
+    "density": "comfortable",      # spacing in the app: comfortable, medium or tight
     # vision model
     "backend": "ollama",           # "ollama" (local) or "claude"
     "ollama_url": "",              # empty: SMP's own Ollama on port 11436 (started when needed)

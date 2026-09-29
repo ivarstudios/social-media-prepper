@@ -59,7 +59,8 @@ def test_full_flow(client, tmp_path):
     w = c.post("/api/write", json={"items": items}).json()
     assert w["written"] == 2 and not w["errors"]
     again = c.post("/api/preview", json={"folder": summer["path"]}).json()["images"]
-    assert again == []                               # nothing left to change once written
+    assert len(again) == 2 and all(i["rows"] == [] and i["done"] for i in again)   # still listed, nothing pending
+    assert again[0]["current"]["caption"]                                          # showing what's in the file
 
     u = c.post("/api/undo", json={"run_id": w["run_id"]}).json()
     assert u["restored"] == 2
@@ -125,3 +126,47 @@ def test_saving_a_brief_keeps_fields_the_form_doesnt_show(client, tmp_path):
     c.post("/api/brief", json={"folder": str(d), "meta": {"creator": "B"}, "body": "New text."})
     text = (d / "brief.md").read_text(encoding="utf-8")
     assert "creator: B" in text and "note: by hand" in text and "New text." in text
+
+
+def test_folder_progress_for_step_dots(client, tmp_path):
+    c, _ = client
+    d = tmp_path / "Set"
+    make_image(d / "a.jpg")
+    make_image(d / "b.jpg", color=(1, 2, 3))
+    c.post("/api/brief", json={"folder": str(d), "meta": {}, "body": "A set."})
+    c.post("/api/scan", json={"folder": str(d), "recursive": True})
+    f = c.get("/api/folders").json()["folders"][0]
+    assert (f["images"], f["written"], f["pending"], f["stale"], f["brief"]) == (2, 0, 0, 0, "own")
+
+    c.post("/api/generate", json={"folder": str(d)})
+    wait_job(c)
+    assert c.get("/api/folders").json()["folders"][0]["pending"] == 2        # generated, nothing written yet
+
+    prev = c.post("/api/preview", json={"folder": str(d)}).json()["images"]
+    first = prev[0]
+    c.post("/api/write", json={"items": [{"path": first["path"], "rows": [r for r in first["rows"] if r["selected"]]}]})
+    f = c.get("/api/folders").json()["folders"][0]
+    assert (f["written"], f["pending"], f["stale"]) == (1, 1, 0)
+
+    c.post("/api/brief", json={"folder": str(d), "meta": {}, "body": "A set, now described differently."})
+    assert c.get("/api/folders").json()["folders"][0]["stale"] == 1       # written with the old brief
+
+
+def test_fix_a_detail_after_writing(client, tmp_path):
+    c, _ = client
+    d = tmp_path / "Set"
+    make_image(d / "a.jpg")
+    c.post("/api/scan", json={"folder": str(d), "recursive": True})
+    c.post("/api/generate", json={"folder": str(d)})
+    wait_job(c)
+    img = c.post("/api/preview", json={"folder": str(d)}).json()["images"][0]
+    c.post("/api/write", json={"items": [{"path": img["path"], "rows": [r for r in img["rows"] if r["selected"]]}]})
+
+    # back later: fix the caption of just this image
+    c.post("/api/write", json={"items": [{"path": img["path"], "rows": [
+        {"field": "caption", "proposed": "A kayaker on Lake Gillöga at dawn.", "edited": True}]}]})
+    again = c.post("/api/preview", json={"path": img["path"]}).json()["images"]
+    assert len(again) == 1 and again[0]["current"]["caption"] == "A kayaker on Lake Gillöga at dawn."
+    assert not [r for r in again[0]["rows"] if r["selected"]]         # nothing pending: the card shows written
+    caption_row = next(r for r in again[0]["rows"] if r["field"] == "caption")
+    assert caption_row["action"] == "keep"                             # the fix is now the person's text

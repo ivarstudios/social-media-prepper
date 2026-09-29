@@ -120,8 +120,15 @@ $("#suKeyBtn").onclick = async () => {
 // fields SMP works out by itself: empty unless the user typed something; the detected value is the placeholder
 const DETECTED = ["ollama_model", "ollama_url", "ollama_exe", "ollama_models_dir", "exiftool"];
 
+const DENSITIES = ["comfortable", "medium", "tight"];
+function applyDensity(d) {
+  document.documentElement.dataset.density = DENSITIES.includes(d) ? d : "comfortable";
+}
+$("#densitySelect").onchange = () => applyDensity($("#densitySelect").value);   // live preview
+
 async function loadSettings() {
   state.settings = await api("/api/settings");
+  applyDensity(state.settings.density);
   $("#backend").value = state.settings.backend || "ollama";
   $("#recent").innerHTML = (state.settings.recent_folders || []).map(f => `<option value="${esc(f)}">`).join("");
   if (!$("#folder").value && state.settings.recent_folders?.length) $("#folder").value = state.settings.recent_folders[0];
@@ -140,7 +147,7 @@ $("#settingsBtn").onclick = async () => {
   $("#settingsDlg").showModal();
 };
 $("#settingsDlg").addEventListener("close", async () => {
-  if ($("#settingsDlg").returnValue !== "save") return;
+  if ($("#settingsDlg").returnValue !== "save") { applyDensity(state.settings.density); return; }   // cancelled
   const out = {};
   for (const el of $("#settingsForm").elements) if (el.name) out[el.name] = el.value;
   state.settings = await api("/api/settings", out);
@@ -184,14 +191,32 @@ function setFolders(r) {
   $("#rootName").title = r.root;
   const total = r.folders.reduce((a, f) => a + f.images, 0);
   $("#rootCount").textContent = `${total} images in ${r.folders.length} folder${r.folders.length === 1 ? "" : "s"}`;
-  const label = { own: "brief", inherited: "inherited", missing: "no brief" };
-  $("#folderList").innerHTML = r.folders.map(f => `
-    <li data-p="${esc(f.path)}" style="padding-left:${14 + f.depth * 14}px" class="${f.path === state.folder ? "sel" : ""}">
+  $("#folderList").innerHTML = r.folders.map(f => {
+    const s = steps(f);
+    return `<li data-p="${esc(f.path)}" style="padding-left:${14 + f.depth * 14}px" class="${f.path === state.folder ? "sel" : ""}">
       <span class="name" title="${esc(f.rel)}">${esc(f.rel.split("/").pop())}</span>
-      <span class="n">${f.images}${f.done ? " · " + f.done + "✓" : ""}</span>
-      <span class="badge ${f.brief}">${label[f.brief]}</span>
-    </li>`).join("");
+      <span class="steps" title="${esc(s.title)}">${s.dots.map(c => `<span class="dot3 ${c}"></span>`).join("")}</span>
+      <span class="count ${s.done ? "done" : ""}">${f.images ? `${f.written}/${f.images}` : ""}</span>
+    </li>`;
+  }).join("");
   $$("#folderList li").forEach(li => li.onclick = () => selectFolder(li.dataset.p));
+}
+
+// Step dots: brief · generated · written. Green only when that step is complete for every image.
+function steps(f) {
+  const n = f.images, briefOk = f.brief !== "missing" && !f.stale;
+  const brief = briefOk ? "on" : "warn";
+  const gen = f.pending ? "blue" : n && f.written === n ? "on" : f.written ? "half" : "";
+  const written = n && f.written === n ? "on" : f.written ? "half" : "";
+  const title = [
+    { own: "Brief: this folder's own brief.md", inherited: "Brief: inherited from a folder above",
+      missing: "Brief: none yet (captions would describe only what's visible)" }[f.brief],
+    f.stale ? `Brief changed since ${f.stale} image${f.stale === 1 ? " was" : "s were"} written: generate again` : "",
+    n ? (f.pending ? `Generated: ${f.pending} waiting in Review & write, not written yet` :
+         f.written === n ? "Generated: all" : "Generated: not yet") : "",
+    n ? `Written: ${f.written} of ${n} images have caption and alt text` : "No images directly in this folder",
+  ].filter(Boolean).join("\n");
+  return { dots: n ? [brief, gen, written] : [brief], title, done: n && f.written === n && briefOk };
 }
 
 async function refreshFolders() { setFolders(await api("/api/folders")); }
@@ -333,72 +358,154 @@ async function poll() {
 }
 
 // ---- preview & write ----------------------------------------------------------------------------------------
-const GROUPS = { text: "Text", keywords: "Keywords", classify: "Classification", credits: "Credits", location: "Location", gps: "Privacy" };
-const ACT = { new: "new", update: "update", replace: "replace", keep: "keep (person wrote)", fill: "fill", differs: "differs", remove: "remove" };
+// Every image is a card with its fields as the file holds them, all editable. Changes waiting to be written
+// (the model's suggestions, or your edits) show on top with what's in the file now. Each card has its own
+// Write button: orange with unwritten changes, green once the file matches what you see.
+const ACT = { new: "new", update: "update", replace: "replace", keep: "keep (person wrote)", fill: "fill",
+  differs: "differs", remove: "remove", edited: "your edit" };
+const FIELD_LABELS = { title: "Title", caption: "Caption", alt_text: "Alt text", keywords: "Keywords", flags: "Flags",
+  place: "Place", city: "City", region: "Region", country: "Country", creator: "Creator", credit: "Credit line",
+  copyright: "Copyright", usage: "Usage terms" };
+const MAIN_FIELDS = ["title", "caption", "alt_text", "keywords", "flags"];
+const MORE_FIELDS = ["place", "city", "region", "country", "creator", "credit", "copyright", "usage"];
+const LIST_FIELDS = ["keywords", "flags", "creator"];
+const LONG_FIELDS = ["caption", "alt_text", "keywords"];
 
 async function loadPreview() {
-  const r = await api("/api/preview", {
-    folder: $("#scopeAll").checked ? null : state.folder,
-    replace_human: $("#replaceHuman").checked, override_credits: $("#overrideCredits").checked,
-  });
+  const r = await api("/api/preview", previewOpts({ folder: $("#scopeAll").checked ? null : state.folder }));
   state.preview = r.images;
   renderPreview();
 }
+function previewOpts(extra) {
+  return { replace_human: $("#replaceHuman").checked, override_credits: $("#overrideCredits").checked, ...extra };
+}
 ["#replaceHuman", "#overrideCredits", "#scopeAll"].forEach(s => $(s).onchange = loadPreview);
+$("#pvFilter").onchange = renderPreview;
+
+const pending = img => img.rows.filter(r => r.selected);
+function cardState(img) {
+  if (pending(img).length) return "dirty";
+  return img.done ? "saved" : "empty";
+}
+function parseValue(field, text) {
+  return LIST_FIELDS.includes(field) ? text.split(",").map(s => s.trim()).filter(Boolean) : text;
+}
+function sameValue(a, b) { return show(a).trim() === show(b).trim(); }
+
+function badgeFor(img, field) {
+  const r = img.rows.find(x => x.field === field);
+  if (r) return `<span class="a-${r.action}">${ACT[r.action] || r.action}</span>`;
+  return `<span class="a-saved">${show(img.current[field]) ? "in file" : "empty"}</span>`;
+}
+
+function fieldRow(img, i, field) {
+  const r = img.rows.find(x => x.field === field);
+  // ticked: the box shows what will be written; unticked: what's in the file, with the suggestion as a hint
+  const text = show(r && r.selected ? r.proposed : img.current[field]);
+  const input = LONG_FIELDS.includes(field)
+    ? `<textarea rows="${Math.min(6, Math.ceil(text.length / 70) + 1)}" data-i="${i}" data-f="${field}">${esc(text)}</textarea>`
+    : `<input value="${esc(text)}" data-i="${i}" data-f="${field}">`;
+  const was = !r ? "" : r.selected ? `<div class="was">In file: ${esc(show(r.current)) || "<i>empty</i>"}</div>`
+    : `<div class="was">Suggested: ${esc(show(r.proposed))}</div>`;
+  const tick = r && !r.fromEdit ? `<input type="checkbox" data-i="${i}" data-f="${field}" ${r.selected ? "checked" : ""}>` : "";
+  return `<tr class="${r && !r.selected ? "off" : ""}"><td class="tick">${tick}</td>
+    <td class="f">${FIELD_LABELS[field]}</td><td class="new">${input}${was}</td><td class="act">${badgeFor(img, field)}</td></tr>`;
+}
+
+function otherRows(img, i) {    // GPS removal and old fields: a tick, nothing to edit
+  const gps = img.rows.findIndex(r => r.field === "gps");
+  const old = img.rows.filter(r => r.group === "cleanup");
+  let html = "";
+  if (gps >= 0) {
+    const r = img.rows[gps];
+    html += `<tr class="${r.selected ? "" : "off"}"><td class="tick"><input type="checkbox" data-i="${i}" data-j="${gps}" ${r.selected ? "checked" : ""}></td>
+      <td class="f">GPS position</td><td class="new"><span class="muted">removed from the file (the brief asks for it)</span>
+      <div class="was">In file: ${esc(show(r.current))}</div></td><td class="act"><span class="a-remove">remove</span></td></tr>`;
+  }
+  if (old.length) {
+    const on = old.every(r => r.selected);
+    const names = old.map(r => r.label.replace(" (old)", "").toLowerCase()).join(", ");
+    html += `<tr class="${on ? "" : "off"}"><td class="tick"><input type="checkbox" data-i="${i}" data-old="1" ${on ? "checked" : ""}></td>
+      <td class="f">Old fields</td><td class="new"><span class="muted">removed: an earlier version of SMP wrote these and they're no longer used</span>
+      <div class="was">${esc(names)}</div></td><td class="act"><span class="a-remove">remove</span></td></tr>`;
+  }
+  return html;
+}
+
+function writeButton(img, i) {
+  const st = cardState(img);
+  const label = { dirty: "Write", saved: "Written ✓", empty: "Nothing to write" }[st];
+  return `<button class="img-write ${st}" data-w="${i}" ${st === "dirty" ? "" : "disabled"}>${label}</button>`;
+}
 
 function renderPreview() {
   const list = $("#previewList");
-  if (!state.preview.length) {
-    list.innerHTML = `<p class="muted">Nothing to change yet. Generate metadata for this folder first.</p>`;
+  const onlyDirty = $("#pvFilter").value === "unsaved";
+  const shown = state.preview.map((img, i) => [img, i]).filter(([img]) => !onlyDirty || cardState(img) === "dirty");
+  if (!shown.length) {
+    list.innerHTML = `<p class="muted">${state.preview.length ? "Nothing unsaved: every image shown is written." :
+      "No images here. Pick a folder with images, or tick All folders."}</p>`;
     updateCount();
     return;
   }
-  list.innerHTML = state.preview.map((img, i) => {
-    let last = "";
-    const rows = img.rows.map((r, j) => {
-      const head = r.group !== last ? `<tr class="group-head"><td colspan="5">${GROUPS[r.group]}</td></tr>` : "";
-      last = r.group;
-      const isText = ["title", "caption", "alt_text", "extended_description", "keywords"].includes(r.field);
-      const val = show(r.proposed);
-      const input = isText
-        ? `<textarea rows="${r.field === "title" ? 1 : Math.min(6, Math.ceil(val.length / 80) + 1)}" data-i="${i}" data-j="${j}">${esc(val)}</textarea>`
-        : `<span>${esc(r.field === "gps" ? "(removed)" : val)}</span>`;
-      return head + `<tr class="${r.selected ? "" : "off"}">
-        <td class="tick"><input type="checkbox" data-i="${i}" data-j="${j}" ${r.selected ? "checked" : ""}></td>
-        <td class="f">${esc(r.label)}</td><td class="cur">${esc(show(r.current)) || "<i>empty</i>"}</td>
-        <td class="new">${input}</td><td class="act"><span class="a-${r.action}">${ACT[r.action]}</span></td></tr>`;
-    }).join("");
-    return `<div class="card"><div><img loading="lazy" src="${img.thumb}" data-full="${esc(img.path)}">
+  list.innerHTML = shown.map(([img, i]) => {
+    const moreOpen = img.rows.some(r => MORE_FIELDS.includes(r.field));
+    return `<div class="card" data-card="${i}"><div class="card-side">
+        <img loading="lazy" src="${img.thumb}" data-full="${esc(img.path)}">
         <div class="fname">${esc(img.rel)}</div>${img.error ? `<div class="err">${esc(img.error)}</div>` : ""}
-        <div class="actions"><button class="ghost small" data-all="${i}">All</button><button class="ghost small" data-none="${i}">None</button></div></div>
-      <table class="rows">${rows}</table></div>`;
+        ${writeButton(img, i)}</div>
+      <div><table class="rows">${MAIN_FIELDS.map(f => fieldRow(img, i, f)).join("")}${otherRows(img, i)}</table>
+        <details class="more" ${moreOpen ? "open" : ""}><summary>Location and credits</summary>
+          <table class="rows">${MORE_FIELDS.map(f => fieldRow(img, i, f)).join("")}</table></details></div></div>`;
   }).join("");
   $$("#previewList .card img").forEach(im => im.onclick = () => zoom(im.dataset.full));
   $$("#previewList input[type=checkbox]").forEach(cb => cb.onchange = () => {
-    state.preview[cb.dataset.i].rows[cb.dataset.j].selected = cb.checked;
-    cb.closest("tr").classList.toggle("off", !cb.checked);
-    updateCount();
+    const img = state.preview[cb.dataset.i];
+    if (cb.dataset.old) img.rows.filter(r => r.group === "cleanup").forEach(r => (r.selected = cb.checked));
+    else (cb.dataset.f ? img.rows.find(x => x.field === cb.dataset.f) : img.rows[cb.dataset.j]).selected = cb.checked;
+    renderPreview();                       // the box switches between the suggestion and the file's value
   });
-  $$("#previewList textarea").forEach(ta => ta.oninput = () => {
-    const r = state.preview[ta.dataset.i].rows[ta.dataset.j];
-    r.proposed = r.field === "keywords" ? ta.value.split(",").map(s => s.trim()).filter(Boolean) : ta.value;
-    r.edited = true;
-    if (!r.selected) { r.selected = true; const cb = ta.closest("tr").querySelector("input"); cb.checked = true; ta.closest("tr").classList.remove("off"); }
-    updateCount();
-  });
-  $$("#previewList [data-all], #previewList [data-none]").forEach(b => b.onclick = () => {
-    const i = b.dataset.all ?? b.dataset.none, on = b.dataset.all !== undefined;
-    state.preview[i].rows.forEach(r => (r.selected = on));
-    renderPreview();
-  });
+  $$("#previewList textarea, #previewList input[data-f]:not([type=checkbox])").forEach(el => el.oninput = () => edit(el));
+  $$("#previewList [data-w]").forEach(b => b.onclick = () => writeOne(+b.dataset.w));
   updateCount();
 }
 
+function edit(el) {
+  const i = el.dataset.i, field = el.dataset.f, img = state.preview[i];
+  const value = parseValue(field, el.value);
+  let r = img.rows.find(x => x.field === field);
+  if (!r) {
+    r = { field, label: FIELD_LABELS[field], current: img.current[field], action: "edited", group: "edit", fromEdit: true };
+    img.rows.push(r);
+  }
+  if (!r.fromEdit && r.suggested === undefined) r.suggested = r.proposed;
+  Object.assign(r, { proposed: value, edited: true, selected: true });
+  if (sameValue(value, r.current)) {       // typed back to what's in the file: nothing to write
+    if (r.fromEdit) img.rows.splice(img.rows.indexOf(r), 1);
+    else Object.assign(r, { proposed: r.suggested, edited: false, selected: false });
+  }
+  const tr = el.closest("tr"), now = img.rows.find(x => x.field === field);
+  tr.classList.toggle("off", !!now && !now.selected);
+  const cb = tr.querySelector("input[type=checkbox]");
+  if (cb) cb.checked = !!now && now.selected;
+  tr.querySelector(".act").innerHTML = badgeFor(img, field);
+  refreshCard(i);
+}
+
+function refreshCard(i) {
+  const old = $(`#previewList [data-card="${i}"] .img-write`);
+  if (old) {
+    old.outerHTML = writeButton(state.preview[i], i);
+    $(`#previewList [data-card="${i}"] .img-write`).onclick = () => writeOne(+i);
+  }
+  updateCount();
+}
+
+function rowsToWrite(img) {
+  return pending(img).map(r => ({ field: r.field, proposed: r.proposed, edited: !!r.edited }));
+}
 function selectedItems() {
-  return state.preview.map(img => ({
-    path: img.path,
-    rows: img.rows.filter(r => r.selected).map(r => ({ field: r.field, proposed: r.proposed, edited: !!r.edited })),
-  })).filter(i => i.rows.length);
+  return state.preview.map(img => ({ path: img.path, rows: rowsToWrite(img) })).filter(i => i.rows.length);
 }
 function updateCount() {
   const items = selectedItems();
@@ -407,10 +514,23 @@ function updateCount() {
   $("#writeBtn").disabled = !n;
 }
 
+async function writeOne(i) {
+  const img = state.preview[i];
+  try {
+    const r = await api("/api/write", { items: [{ path: img.path, rows: rowsToWrite(img) }] });
+    if (Object.keys(r.errors || {}).length) { toast("Couldn't write: " + Object.values(r.errors)[0]); return; }
+    const fresh = await api("/api/preview", previewOpts({ path: img.path }));
+    if (fresh.images[0]) state.preview[i] = fresh.images[0];
+    renderPreview();
+    refreshFolders();
+    if (r.run_id) toast(`Wrote ${img.name}`, { label: "Undo", fn: () => undo(r.run_id) });
+  } catch (e) { toast(e.message); }
+}
+
 $("#writeBtn").onclick = async () => {
   const items = selectedItems();
   const n = items.reduce((a, i) => a + i.rows.length, 0);
-  const v = await ask("Write to files?", `${n} changes go into ${items.length} files. The old values are kept, so you can undo this.`, [["Cancel", "no", true], ["Write", "yes"]]);
+  const v = await ask("Write to files?", `${n} changes go into ${items.length} files. The old values are kept, so you can undo this.`, [["Cancel", "no", true], ["Write all", "yes"]]);
   if (v !== "yes") return;
   $("#writeBtn").disabled = true;
   try {
@@ -422,6 +542,7 @@ $("#writeBtn").onclick = async () => {
     box.textContent = `Wrote ${r.written} file${r.written === 1 ? "" : "s"}${errs ? `, ${errs} failed: ` + Object.values(r.errors).slice(0, 3).join("; ") : ""}.`;
     if (r.run_id) toast(`Wrote ${r.written} files`, { label: "Undo", fn: () => undo(r.run_id) });
     await loadPreview();
+    refreshFolders();
   } catch (e) { toast(e.message); }
   updateCount();
 };
@@ -432,6 +553,7 @@ async function undo(runId) {
     toast(`Restored ${r.restored} files`);
     $("#lastRun").hidden = true;
     loadPreview();
+    refreshFolders();
   } catch (e) { toast(e.message); }
 }
 
@@ -442,7 +564,11 @@ async function undo(runId) {
   if (st && !st.ready) $("#setupDlg").showModal();          // first start, or something missing
   if (st && st.pull && st.pull.running) pollPull();
   const r = await api("/api/folders");
-  if (r.root) { setFolders(r); $("#folder").value = r.root; selectFolder(r.root); }
+  if (r.root) {
+    setFolders(r); $("#folder").value = r.root;
+    await selectFolder(r.root);
+    if (location.hash === "#review") openTab("preview");        // a link straight to Review & write
+  }
   const j = await api("/api/job");
   if (j.running) poll();
 })();

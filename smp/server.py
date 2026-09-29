@@ -67,11 +67,28 @@ class Session:
         for d in dirs:
             r = brief.resolve(d, defaults)
             out.append({"path": str(d), "rel": rel(d, self.root), "depth": len(d.relative_to(self.root).parts),
-                        "images": counts.get(d, 0), "brief": "own" if r.own else ("inherited" if r.sources else
-                                                                                     "missing"),
-                        "done": sum(1 for f in self.files.values() if f.path.parent == d and str(f.path) in
-                                    self.results and "ai" in self.results[str(f.path)])})
+                        "images": counts.get(d, 0),
+                        "brief": "own" if r.own else ("inherited" if r.sources else "missing"),
+                        **self.progress([f for f in self.files.values() if f.path.parent == d], r.digest)})
         return out
+
+    def progress(self, files: list[images.ImageFile], brief_digest: str) -> dict:
+        """Where a folder's images are in the workflow, for the step dots.
+
+        written: caption and alt text both in the file (whoever wrote them); read from the files, so it's right
+        after a restart. pending: the model has answered but nothing is written yet (this session only).
+        stale: written by SMP with a brief that has changed since."""
+        written = pending = stale = 0
+        for f in files:
+            done = bool(field_value(f.meta, "caption")) and bool(field_value(f.meta, "alt_text"))
+            written += done
+            res = self.results.get(str(f.path), {})
+            if "ai" in res and not done:
+                pending += 1
+            wrote_with = f.meta.get("XMP-smp:BriefHash")
+            if wrote_with and wrote_with != brief_digest:
+                stale += 1
+        return {"written": written, "pending": pending, "stale": stale}
 
 
 S = Session()
@@ -361,23 +378,27 @@ def create_app() -> FastAPI:
 
     @app.post("/api/preview")
     def preview(body: dict = Body(default={})):
+        """Every image in scope: what its file holds now (editable) and the changes waiting to be written.
+        {"path": ...} returns just that image, to refresh its card after writing it."""
         folder = body.get("folder") or None
+        only = body.get("path")
         opts = {"replace_human": bool(body.get("replace_human")),
                 "override_credits": bool(body.get("override_credits"))}
         defaults = defaults_from(config.load())
         briefs: dict[Path, brief.Resolved] = {}
         out = []
         for p, f in S.files.items():
-            if not in_scope(p, folder):
+            if (only and p != only) or (not only and not in_scope(p, folder)):
                 continue
             res = S.results.get(p, {})
             d = f.path.parent
             if d not in briefs:
                 briefs[d] = brief.resolve(d, defaults)
             rows = plan.propose(f.meta, res.get("ai"), briefs[d].meta, place_for(f), **opts)
-            if rows or res.get("error"):
-                out.append({"path": p, "name": f.path.name, "rel": rel(f.path, S.root), "thumb": thumb_url(p),
-                            "error": res.get("error"), "rows": plan.rows_json(rows)})
+            current = {name: field_value(f.meta, name) for name in plan.EDITABLE}
+            out.append({"path": p, "name": f.path.name, "rel": rel(f.path, S.root), "thumb": thumb_url(p),
+                        "error": res.get("error"), "rows": plan.rows_json(rows), "current": current,
+                        "done": bool(current["caption"]) and bool(current["alt_text"])})
         return {"images": out}
 
     @app.post("/api/write")

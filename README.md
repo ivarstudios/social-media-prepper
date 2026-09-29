@@ -51,8 +51,10 @@ machine yet.*
 2. **Brief**: write a few sentences about the set and fill in credits. *Draft from photos* suggests a text
    from sample images. Saving writes `brief.md` into that folder.
 3. **Generate** for one folder or all of them.
-4. **Preview & write**: every field for every image, current value → proposed value. Untick what you don't
-   want, edit any text, then *Write to files*. *Undo* puts the old values back.
+4. **Review & write**: every image with its fields, as the file holds them and as they'd change. Untick
+   suggestions you don't want, edit any text, and write one image with its own button (orange: unsaved changes,
+   green: written) or everything with *Write all*. Written images stay here, so you can come back and fix a
+   detail. *Undo* puts the old values back.
 
 ## brief.md
 

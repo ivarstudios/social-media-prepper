@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass
 
 from smp import __version__, store
 from smp.exif import FIELDS, GPS_TAGS, SMP_TAGS, ExifTool, as_list, as_text, assignments, field_value, \
-    remove_gps, restore_gps
+    remove_gps, restore_gps, set_list
 from smp.geo import NEAR_KM, Place
 
 # What SMP writes: only what matters when preparing images for social media.
@@ -22,6 +22,8 @@ AI_TEXT = ["title", "caption", "alt_text"]
 CLASSIFY = ["flags"]                      # minors, content warning: what a posting assistant must know
 CREDITS = ["creator", "credit", "copyright", "usage"]
 LOCATION = ["place", "city", "region", "country", "country_code"]
+# The fields a person can see and edit for every image, in the order they're shown.
+EDITABLE = AI_TEXT + ["keywords"] + CLASSIFY + LOCATION[:4] + CREDITS
 # Written by earlier versions and no longer used: removed on the next write (only where SMP wrote them).
 OBSOLETE_SMP = ["season", "time_of_day", "shot_type", "crop_fit", "focal_point", "language"]   # XMP-smp only
 OBSOLETE_IF_OURS = ["extended_description", "source_type"]
@@ -124,6 +126,16 @@ def propose(meta: dict, ai: dict | None, brief_meta: dict, place: Place | None, 
         if cur != new and (cur or new):
             rows.append(_row("flags", cur, new, "remove" if not new else "update" if cur else "new", True, "classify"))
 
+    # keywords doubled by SMP 0.1's list bug (or anyone else): offer the list once
+    cur = field_value(meta, "keywords")
+    if not any(r.field == "keywords" for r in rows) and len({k.lower() for k in cur}) < len(cur):
+        once, seen = [], set()
+        for k in cur:
+            if k.lower() not in seen:
+                seen.add(k.lower())
+                once.append(k)
+        rows.append(_row("keywords", cur, once, "update", True, "keywords"))
+
     for name in CREDITS:
         want = brief_meta.get(name)
         if not want:
@@ -190,8 +202,7 @@ def changes_for(meta: dict, rows: list[dict], model: str, brief_digest: str) -> 
     args = assignments(meta, values)
     if gps_off:
         args += remove_gps()
-    args += ["-XMP-smp:Fingerprints=" + json.dumps(fps, sort_keys=True), "-XMP-smp:AddedKeywords="]
-    args += [f"-XMP-smp:AddedKeywords+={k}" for k in added]
+    args += ["-XMP-smp:Fingerprints=" + json.dumps(fps, sort_keys=True), *set_list("XMP-smp:AddedKeywords", added)]
     args += [f"-XMP-smp:Version={__version__}", f"-XMP-smp:Model={model}", f"-XMP-smp:BriefHash={brief_digest}",
              "-XMP-smp:Written=" + time.strftime("%Y-%m-%dT%H:%M:%S")]
     return args
@@ -227,13 +238,13 @@ def undo(et: ExifTool, run_id: int) -> dict:
             # the older EXIF/IPTC copies were only written when the file had them
             for tag in (f.tags[0], *(t for t in f.tags[1:] if t in before)):
                 if f.is_list:
-                    args += [f"-{tag}="] + [f"-{tag}+={v}" for v in as_list(before.get(tag))]
+                    args += set_list(tag, before.get(tag))
                 else:
                     args.append(f"-{tag}={as_text(before.get(tag))}")
         for tag in SMP_TAGS:
             v = before.get(tag)
             if tag == "XMP-smp:AddedKeywords":
-                args += [f"-{tag}="] + [f"-{tag}+={x}" for x in as_list(v)]
+                args += set_list(tag, v)
             else:
                 args.append(f"-{tag}={as_text(v)}")
         args += restore_gps(before)

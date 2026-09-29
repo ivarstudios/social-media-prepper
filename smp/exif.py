@@ -152,6 +152,13 @@ def _on_path(exe: str) -> bool:
     return which(exe) is not None
 
 
+def set_list(tag: str, values) -> list[str]:
+    """Arguments that replace a list tag with exactly these values. ExifTool builds the new list from repeated
+    -TAG=value; "-TAG=" followed by "-TAG+=value" would add to the old list instead of replacing it."""
+    values = as_list(values)
+    return [f"-{tag}={v}" for v in values] if values else [f"-{tag}="]
+
+
 def assignments(meta: dict, changes: dict[str, object]) -> list[str]:
     """ExifTool arguments setting logical fields to new values ("" or [] clears a field)."""
     out: list[str] = []
@@ -160,8 +167,7 @@ def assignments(meta: dict, changes: dict[str, object]) -> list[str]:
         present = [t for t in f.tags[1:] if t in meta and meta[t] not in (None, "", [])]
         for tag in (f.tags[0], *present):
             if f.is_list:
-                out.append(f"-{tag}=")
-                out += [f"-{tag}+={v}" for v in as_list(value)]
+                out += set_list(tag, value)
             else:
                 out.append(f"-{tag}={as_text(value)}")
     return out

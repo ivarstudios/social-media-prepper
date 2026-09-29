@@ -38,3 +38,11 @@ def test_settings_store_only_choices(data_dir):
     assert s["ollama_url"].endswith(":11436") and s["ollama_models_dir"].endswith("ollama-models")
     config.save({"creator": ""})
     assert config.stored() == {}
+
+
+def test_density_setting(data_dir):
+    assert config.load()["density"] == "comfortable"
+    config.save({"density": "tight"})
+    assert config.stored() == {"density": "tight"}
+    config.save({"density": "comfortable"})                 # back to the default: nothing stored
+    assert config.stored() == {}

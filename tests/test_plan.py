@@ -117,4 +117,11 @@ def test_changes_for_fingerprints_and_edits():
     args = plan.changes_for({}, rows, "m", "d")
     fps = json.loads(next(a for a in args if a.startswith("-XMP-smp:Fingerprints=")).split("=", 1)[1])
     assert fps == {"title": plan.fingerprint("A title")}
-    assert "-XMP-smp:AddedKeywords+=a" in args and "-XMP-dc:Title=A title" in args
+    assert "-XMP-smp:AddedKeywords=a" in args and "-XMP-smp:AddedKeywords=b" in args and "-XMP-dc:Title=A title" in args
+
+
+def test_doubled_keywords_are_offered_once():
+    meta = {"XMP-dc:Subject": ["snow", "hut", "Snow", "hut"]}
+    r = rows_by_field(plan.propose(meta, None, {}, None))
+    assert r["keywords"].proposed == ["snow", "hut"]
+    assert "keywords" not in rows_by_field(plan.propose({"XMP-dc:Subject": ["snow", "hut"]}, None, {}, None))

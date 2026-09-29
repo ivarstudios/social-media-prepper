@@ -58,3 +58,21 @@ def test_gps_removed_and_restored(tmp_path, exiftool_path):
     assert read1(et, p).get("Composite:GPSLatitude") is None
     plan.undo(et, res["run_id"])
     assert abs(read1(et, p)["Composite:GPSLatitude"] - 67.9) < 1e-6
+
+
+def test_rewriting_lists_replaces_them_and_undo_restores_them(tmp_path, exiftool_path):
+    """Writing keywords to a file that already has keywords replaces the list (no duplicates), twice in a row,
+    and undo puts the exact old list back."""
+    et = ExifTool(exiftool_path)
+    p = make_image(tmp_path / "k.jpg")
+    et.write([(str(p), ["-XMP-dc:Subject=nepal", "-XMP-dc:Subject=trek, winter", "-IPTC:Keywords=nepal"])])
+    before = read1(et, p)
+    plan.write(et, str(tmp_path), {str(p): {"meta": before, "rows": [{"field": "keywords", "proposed": ["a", "b"]}]}})
+    res = plan.write(et, str(tmp_path), {str(p): {"meta": read1(et, p),
+                                                  "rows": [{"field": "keywords", "proposed": ["a", "c"]}]}})
+    after = read1(et, p)
+    assert field_value(after, "keywords") == ["a", "c"]
+    assert after.get("IPTC:Keywords") == ["a", "c"]
+    assert after.get("XMP-smp:AddedKeywords") == ["a", "c"]
+    plan.undo(et, res["run_id"])
+    assert field_value(read1(et, p), "keywords") == ["a", "b"]

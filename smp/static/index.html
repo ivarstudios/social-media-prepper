@@ -10,32 +10,39 @@
 <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand"><img src="/static/smp-icon.svg" alt=""><div>IVAR <b>SMP</b><span>Social Media Prepper</span></div></div>
-  <form id="scanForm" class="scan">
-    <input id="folder" list="recent" placeholder="Folder with finished images, e.g. D:\Photos\2024 Summer trip" autocomplete="off">
-    <datalist id="recent"></datalist>
-    <button type="button" id="browseBtn" class="ghost">Choose folder</button>
-    <label class="check"><input type="checkbox" id="recursive" checked> Subfolders</label>
-    <button type="submit">Scan</button>
-  </form>
-  <div class="right">
-    <select id="backend" title="Vision model">
-      <option value="ollama">Local model</option>
-      <option value="claude">Claude API</option>
-    </select>
-    <button id="setupBtn" class="ghost"><span id="statusDot" class="dot"></span> Setup</button>
-    <button id="settingsBtn" class="ghost">Settings</button>
-  </div>
-</header>
-
 <main class="layout">
   <aside class="side">
-    <div class="side-head"><span id="rootName">No folder scanned</span><small id="rootCount"></small></div>
+    <div class="brand">
+      <img src="/static/smp-icon.svg" alt="">
+      <div class="brand-name">IVAR <b>SMP</b></div>
+      <div class="brand-sub">Social Media Prepper</div>
+    </div>
+    <div class="side-head"><span id="rootName">No folder scanned</span><small id="rootCount"></small>
+      <small class="legend-dots" title="Hover a folder's dots for details">Dots: brief · generated · written</small></div>
     <ul id="folderList" class="folders"></ul>
+    <div class="side-foot">
+      <label class="model-pick">Vision model
+        <select id="backend">
+          <option value="ollama">Local model</option>
+          <option value="claude">Claude API</option>
+        </select>
+      </label>
+      <div class="side-buttons">
+        <button id="setupBtn" class="ghost"><span id="statusDot" class="dot"></span> Setup</button>
+        <button id="settingsBtn" class="ghost">Settings</button>
+      </div>
+    </div>
   </aside>
 
   <section class="main">
+    <form id="scanForm" class="scan">
+      <input id="folder" list="recent" placeholder="Folder with finished images, e.g. D:\Photos\2024 Summer trip" autocomplete="off">
+      <datalist id="recent"></datalist>
+      <button type="button" id="browseBtn" class="ghost">Choose folder</button>
+      <label class="check"><input type="checkbox" id="recursive" checked> Subfolders</label>
+      <button type="submit">Scan</button>
+    </form>
+    <div class="content">
     <div id="empty" class="empty">
       <h1>Scan a folder of finished images</h1>
       <p>SMP reads each folder's <code>brief.md</code>, has a vision model write title, caption, alt text,
@@ -63,7 +70,7 @@
       <nav class="tabs">
         <button data-tab="brief" class="active">Brief</button>
         <button data-tab="images">Images</button>
-        <button data-tab="preview">Preview &amp; write</button>
+        <button data-tab="preview">Review &amp; write</button>
       </nav>
 
       <div id="tab-brief" class="tab">
@@ -104,13 +111,18 @@
           <label class="check"><input type="checkbox" id="replaceHuman"> Replace text a person wrote</label>
           <label class="check"><input type="checkbox" id="overrideCredits"> Replace existing credits with the brief's</label>
           <label class="check"><input type="checkbox" id="scopeAll"> All folders</label>
+          <select id="pvFilter" class="pv-filter" title="Which images to show">
+            <option value="all">All images</option>
+            <option value="unsaved">Unsaved only</option>
+          </select>
           <span class="spacer"></span>
           <span id="selCount" class="muted"></span>
-          <button id="writeBtn">Write to files</button>
+          <button id="writeBtn">Write all</button>
         </div>
         <div id="lastRun" class="note" hidden></div>
         <div id="previewList"></div>
       </div>
+    </div>
     </div>
   </section>
 </main>
@@ -125,6 +137,14 @@
       <label>Copyright<input name="copyright"></label>
       <label>Default language<select name="language"><option value="en">English</option><option value="sv">Swedish</option></select></label>
       <label>Default model<select name="backend"><option value="ollama">Local (Ollama)</option><option value="claude">Claude API</option></select></label>
+    </div>
+    <h4>Layout</h4>
+    <div class="grid">
+      <label>Spacing<select name="density" id="densitySelect">
+        <option value="comfortable">Comfortable</option>
+        <option value="medium">Medium</option>
+        <option value="tight">Tight</option>
+      </select></label>
     </div>
     <h4>Advanced</h4>
     <p class="muted">Leave these empty to let SMP find them. The Claude key is set in Setup.</p>
