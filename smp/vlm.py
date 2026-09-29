@@ -21,17 +21,18 @@ from pydantic import BaseModel, Field
 from smp import machine, store
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = "3"
+PROMPT_VERSION = "4"
 LANGUAGES = {"en": "English", "sv": "Swedish"}
 
 
 class ImageMetadata(BaseModel):
-    title: str = Field(description="3-8 words naming what the image shows. No ending period.")
-    caption: str = Field(description="1-3 sentences: what the image shows, then the context from the brief that "
-                                     "applies to it.")
-    alt_text: str = Field(description="Alt text for screen readers: what is visible, 1-2 sentences, under 250 "
-                                      "characters.")
-    keywords: list[str] = Field(description="6-15 lowercase keywords.")
+    # min_length: a small model otherwise leaves fields empty when there's no brief to draw context from
+    title: str = Field(min_length=1, description="3-8 words naming what the image shows. No ending period.")
+    caption: str = Field(min_length=1, description="1-3 sentences: what the image shows, then any context from "
+                                                   "the brief that applies to it.")
+    alt_text: str = Field(min_length=1, description="Alt text for screen readers: what is visible, 1-2 sentences, "
+                                                    "under 250 characters.")
+    keywords: list[str] = Field(min_length=1, description="6-15 lowercase keywords.")
     minors_visible: bool = Field(description="Children or young teenagers are visible.")
     content_warning: str = Field(description="Short note if the image shows something distressing or private "
                                              "(human remains, injury, grief, confidential work information), "
@@ -59,13 +60,14 @@ health, disability, sexual orientation, political views, legal status or how peo
 text exactly. It gives no background the image doesn't show.
 - Keywords: subjects, setting, activity, landscape and place names from the brief or file facts. No people's \
 names, no words like "photo" or "image".
+- Always fill in the title, caption, alt text and keywords, also without a brief: then describe what is visible.
 - Write every text field in {language}. Keywords too."""
 
 
 def build_user(facts: list[str], brief_context: str, own_text: dict[str, object]) -> str:
     parts = ["File facts:\n" + "\n".join(f"- {f}" for f in facts)]
     parts.append("Brief from the photographer:\n" + (brief_context.strip() or "(no brief for this folder: "
-                                                       "describe only what is visible)"))
+                                                       "write every field from what is visible)"))
     own = [f"- {k}: {', '.join(v) if isinstance(v, list) else v}" for k, v in own_text.items() if v]
     if own:
         parts.append("Text the photographer already wrote for this image:\n" + "\n".join(own))
