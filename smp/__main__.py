@@ -15,7 +15,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from smp import __version__, config
+from smp import __version__, config, winicon
 
 
 def free_port(start: int) -> int:
@@ -35,9 +35,9 @@ def running_at(port: int) -> bool:
         return False
 
 
-def open_window(url: str) -> None:
-    """A window of its own (Chrome or Edge app mode: no tabs, SMP's icon and name in the taskbar), else a
-    browser tab."""
+def open_window(url: str) -> bool:
+    """A window of its own (Chrome or Edge app mode: no tabs, SMP's name in the taskbar), else a browser tab.
+    True when it's an app window, which then gets SMP's icon (winicon.brand_app_window)."""
     if sys.platform == "win32":
         roots = [os.environ.get(k, "") for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
         for sub in (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe"):
@@ -45,28 +45,9 @@ def open_window(url: str) -> None:
                 exe = Path(root) / sub
                 if root and exe.exists():
                     subprocess.Popen([str(exe), f"--app={url}", "--window-size=1440,960"])
-                    return
+                    return True
     webbrowser.open(url)
-
-
-def brand_console() -> None:
-    """SMP's icon on the console window (the one that keeps the server running). Only the classic console
-    has one to change; in Windows Terminal this does nothing."""
-    if sys.platform != "win32":
-        return
-    import ctypes
-
-    ico = Path(__file__).parent / "static" / "smp-icon.ico"
-    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
-    if not hwnd or not ico.exists():
-        return
-    user32 = ctypes.windll.user32
-    user32.LoadImageW.restype = ctypes.c_void_p
-    user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
-    for which, size in ((0, 16), (1, 32)):                       # WM_SETICON: ICON_SMALL, ICON_BIG
-        h = user32.LoadImageW(None, str(ico), 1, size, size, 0x10)   # IMAGE_ICON, LR_LOADFROMFILE
-        if h:
-            user32.SendMessageW(hwnd, 0x80, which, h)
+    return False
 
 
 def doctor() -> int:
@@ -119,17 +100,20 @@ def main() -> None:
     home = a.port or int(config.load().get("port") or 8765)
     if not a.folder and running_at(home):
         print("IVAR SMP is already running: opening its window")
-        if not a.no_browser:
-            open_window(f"http://127.0.0.1:{home}/")
+        if not a.no_browser and open_window(f"http://127.0.0.1:{home}/"):
+            winicon.brand_app_window()
         return
     port = free_port(home)
     url = f"http://127.0.0.1:{port}/"
-    brand_console()
+    winicon.brand_console()
     if a.folder:
         S.scan(a.folder, True)
     print(f"IVAR SMP {__version__} is running at {url}  (close this window to stop it)")
     if not a.no_browser:
-        threading.Timer(1.2, lambda: open_window(url)).start()
+        def show():
+            if open_window(url):
+                winicon.brand_app_window()
+        threading.Timer(1.2, show).start()
     uvicorn.run(create_app(), host="127.0.0.1", port=port, log_level="warning")
 
 
