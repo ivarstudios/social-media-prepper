@@ -19,6 +19,7 @@
   --page-x: 24px; --page-y: 18px; --gap: 12px; --gap-s: 8px; --field-pad: 6px 8px; --row-pad: 5px 6px;
   --card-pad: 12px; --item-pad: 5px 14px; }
 * { box-sizing: border-box; }
+:root { --content-max: 1200px; }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); color: var(--ink); }
 button, input, select, textarea { font: inherit; color: inherit; }
@@ -56,7 +57,9 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .side-buttons button { flex: 1; justify-content: center; }
 
 /* the main column: folder chooser on top, then the work */
-.scan { display: flex; gap: 8px; align-items: center; padding: 14px var(--page-x); background: var(--bg);
+/* full-width bar, its contents lined up with the content column below */
+.scan { display: flex; gap: 8px; align-items: center; background: var(--bg);
+  padding: 14px max(var(--page-x), calc((100% - var(--content-max)) / 2 + var(--page-x)));
   border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
 .scan input#folder { flex: 1; min-width: 120px; }
 .folders { list-style: none; margin: 0; padding: 6px 0; }
@@ -78,7 +81,7 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 
 .main { min-width: 0; }
 /* a readable line length for the fields, centred in the main column */
-.content { padding: var(--page-y) var(--page-x) 80px; max-width: 1200px; margin: 0 auto; }
+.content { padding: var(--page-y) var(--page-x) 80px; max-width: var(--content-max); margin: 0 auto; }
 .empty { max-width: 620px; margin: 10vh auto; text-align: center; color: var(--muted); }
 .empty h1 { color: var(--ink); font-weight: 600; }
 .folder-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
