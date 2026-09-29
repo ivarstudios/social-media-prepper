@@ -348,7 +348,9 @@ async function generate(all) {
 // A card's Generate button: just that image, shown in place without leaving the list.
 async function generateOne(i) {
   try {
-    await api("/api/generate", { paths: [state.preview[i].path], backend: $("#backend").value });
+    const path = state.preview[i].path;
+    // the folder too: a server older than this page ignores paths, and then does only this folder, not everything
+    await api("/api/generate", { paths: [path], folder: path.replace(/[\\/][^\\/]*$/, ""), backend: $("#backend").value });
     state.jobRunning = true;
     $$("#previewList .img-gen").forEach(b => (b.disabled = true));
     state.finishedSeen = 0;
