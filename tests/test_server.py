@@ -170,3 +170,15 @@ def test_fix_a_detail_after_writing(client, tmp_path):
     assert not [r for r in again[0]["rows"] if r["selected"]]         # nothing pending: the card shows written
     caption_row = next(r for r in again[0]["rows"] if r["field"] == "caption")
     assert caption_row["action"] == "keep"                             # the fix is now the person's text
+
+
+def test_job_reports_finished_images_incrementally(client, tmp_path):
+    c, _ = client
+    d = tmp_path / "Set"
+    a, b = make_image(d / "a.jpg"), make_image(d / "b.jpg", color=(9, 9, 9))
+    c.post("/api/scan", json={"folder": str(d), "recursive": True})
+    c.post("/api/generate", json={"folder": str(d)})
+    j = wait_job(c)
+    assert j["finished_total"] == 2 and sorted(j["finished"]) == sorted([str(a), str(b)])
+    assert c.get("/api/job", params={"since": 2}).json()["finished"] == []
+    assert j["current"] == "" and j["partial"] == {}

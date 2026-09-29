@@ -337,6 +337,11 @@ async function generate(all) {
   }
   try {
     await api("/api/generate", { folder: all ? null : state.folder, backend: $("#backend").value });
+    // watch it happen: Review & write shows each image's text as the model writes it
+    $("#scopeAll").checked = all;
+    state.finishedSeen = 0;
+    state.streamingPath = "";
+    openTab("preview");
     poll();
   } catch (e) { toast(e.message); }
 }
@@ -346,15 +351,72 @@ $("#stopBtn").onclick = () => api("/api/stop", {});
 
 async function poll() {
   clearTimeout(state.pollTimer);
-  const j = await api("/api/job");
+  let j;
+  try { j = await api(`/api/job?since=${state.finishedSeen || 0}`); }
+  catch (e) { state.pollTimer = setTimeout(poll, 2000); return; }
   $("#jobBar").hidden = false;
   $("#jobFill").style.width = j.total ? (100 * j.done / j.total) + "%" : "3%";
-  $("#jobText").textContent = `${j.message}${j.total ? ` · ${j.done} / ${j.total}` : ""}${j.cached ? ` · ${j.cached} cached` : ""}${j.errors ? ` · ${j.errors} failed` : ""}`;
+  const now = j.current ? j.current.split(/[\\/]/).pop() : "";
+  $("#jobText").innerHTML = esc(`${j.message}${j.total ? ` · ${j.done} / ${j.total}` : ""}${j.cached ? ` · ${j.cached} cached` : ""}${j.errors ? ` · ${j.errors} failed` : ""}`) +
+    (now ? ` · now: <a href="#" id="jumpNow">${esc(now)}</a>` : "");
+  const jump = $("#jumpNow");
+  if (jump) jump.onclick = e => { e.preventDefault(); scrollToImage(j.current); };
   $("#stopBtn").hidden = !j.running;
   $("#genFolder").disabled = $("#genAll").disabled = j.running;
-  if (j.running) { state.pollTimer = setTimeout(poll, 1200); return; }
+
+  await state.previewReady;
+  state.finishedSeen = j.finished_total;
+  for (const path of j.finished) await showAnswer(path);
+  streamInto(j.current, j.partial);
+
+  if (j.running) { state.pollTimer = setTimeout(poll, 350); return; }
   await refreshFolders();
-  if (j.done) { openTab("preview"); }
+}
+
+const cardIndex = path => (state.preview || []).findIndex(x => x.path === path);
+function scrollToImage(path) {
+  const card = $(`#previewList [data-card="${cardIndex(path)}"]`);
+  if (card) card.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+// The model finished an image: its card becomes a normal, editable one with the suggestions.
+async function showAnswer(path) {
+  const i = cardIndex(path);
+  if (i < 0) return;
+  const fresh = (await api("/api/preview", previewOpts({ path }))).images[0];
+  if (!fresh) return;
+  // keep anything you typed into this card before the model got to it
+  const mine = state.preview[i].rows.filter(r => r.edited);
+  const minef = new Set(mine.map(r => r.field));
+  fresh.rows = fresh.rows.filter(r => !minef.has(r.field)).concat(mine);
+  state.preview[i] = fresh;
+  if (state.streamingPath === path) state.streamingPath = "";
+  updateCard(i);
+  refreshFolders();
+}
+
+// The image being described: put the text so far into its fields.
+function streamInto(path, partial) {
+  if (!path) return;
+  const i = cardIndex(path);
+  if (i < 0) return;
+  const img = state.preview[i];
+  img.partial = partial || {};
+  if (state.streamingPath !== path || !img.streaming) {
+    state.streamingPath = path;
+    img.streaming = true;
+    updateCard(i);
+  }
+  const card = $(`#previewList [data-card="${i}"]`);
+  if (!card) return;
+  for (const f of STREAM_FIELDS) {
+    const box = card.querySelector(`[data-stream="${f}"]`);
+    const text = show(img.partial[f] || "");
+    if (box && box.value !== text) {
+      box.value = text;
+      box.rows = f === "title" ? 1 : Math.min(8, Math.ceil(text.length / 70) + 1);
+    }
+  }
 }
 
 // ---- preview & write ----------------------------------------------------------------------------------------
@@ -371,10 +433,17 @@ const MORE_FIELDS = ["place", "city", "region", "country", "creator", "credit", 
 const LIST_FIELDS = ["keywords", "flags", "creator"];
 const LONG_FIELDS = ["caption", "alt_text", "keywords"];
 
-async function loadPreview() {
-  const r = await api("/api/preview", previewOpts({ folder: $("#scopeAll").checked ? null : state.folder }));
-  state.preview = r.images;
-  renderPreview();
+// Only the newest load is shown, and polling waits for it (state.previewReady), so an answer that arrives
+// while the list is loading is never lost or overwritten by an older copy.
+function loadPreview() {
+  const seq = state.previewSeq = (state.previewSeq || 0) + 1;
+  state.previewReady = api("/api/preview", previewOpts({ folder: $("#scopeAll").checked ? null : state.folder }))
+    .then(r => {
+      if (seq !== state.previewSeq) return;
+      state.preview = r.images;
+      renderPreview();
+    });
+  return state.previewReady;
 }
 function previewOpts(extra) {
   return { replace_human: $("#replaceHuman").checked, override_credits: $("#overrideCredits").checked, ...extra };
@@ -441,32 +510,66 @@ function writeButton(img, i) {
 function renderPreview() {
   const list = $("#previewList");
   const onlyDirty = $("#pvFilter").value === "unsaved";
-  const shown = state.preview.map((img, i) => [img, i]).filter(([img]) => !onlyDirty || cardState(img) === "dirty");
+  const shown = state.preview.map((img, i) => [img, i])
+    .filter(([img]) => !onlyDirty || img.streaming || cardState(img) === "dirty");
   if (!shown.length) {
     list.innerHTML = `<p class="muted">${state.preview.length ? "Nothing unsaved: every image shown is written." :
       "No images here. Pick a folder with images, or tick All folders."}</p>`;
     updateCount();
     return;
   }
-  list.innerHTML = shown.map(([img, i]) => {
-    const moreOpen = img.rows.some(r => MORE_FIELDS.includes(r.field));
-    return `<div class="card" data-card="${i}"><div class="card-side">
-        <img loading="lazy" src="${img.thumb}" data-full="${esc(img.path)}">
-        <div class="fname">${esc(img.rel)}</div>${img.error ? `<div class="err">${esc(img.error)}</div>` : ""}
-        ${writeButton(img, i)}</div>
-      <div><table class="rows">${MAIN_FIELDS.map(f => fieldRow(img, i, f)).join("")}${otherRows(img, i)}</table>
-        <details class="more" ${moreOpen ? "open" : ""}><summary>Location and credits</summary>
-          <table class="rows">${MORE_FIELDS.map(f => fieldRow(img, i, f)).join("")}</table></details></div></div>`;
-  }).join("");
-  $$("#previewList .card img").forEach(im => im.onclick = () => zoom(im.dataset.full));
-  $$("#previewList input[type=checkbox]").forEach(cb => cb.onchange = () => {
-    const img = state.preview[cb.dataset.i];
+  list.innerHTML = shown.map(([img, i]) => cardHtml(img, i)).join("");
+  $$("#previewList .card").forEach(bindCard);
+  updateCount();
+}
+
+function cardHtml(img, i) {
+  if (img.streaming) return streamingCardHtml(img, i);
+  const moreOpen = img.rows.some(r => MORE_FIELDS.includes(r.field));
+  return `<div class="card" data-card="${i}"><div class="card-side">
+      <img loading="lazy" src="${img.thumb}" data-full="${esc(img.path)}">
+      <div class="fname">${esc(img.rel)}</div>${img.error ? `<div class="err">${esc(img.error)}</div>` : ""}
+      ${writeButton(img, i)}</div>
+    <div><table class="rows">${MAIN_FIELDS.map(f => fieldRow(img, i, f)).join("")}${otherRows(img, i)}</table>
+      <details class="more" ${moreOpen ? "open" : ""}><summary>Location and credits</summary>
+        <table class="rows">${MORE_FIELDS.map(f => fieldRow(img, i, f)).join("")}</table></details></div></div>`;
+}
+
+// The image the model is working on: its text appears as it's written, read-only until the answer is complete.
+const STREAM_FIELDS = ["title", "caption", "alt_text", "keywords"];
+function streamingCardHtml(img, i) {
+  const p = img.partial || {};
+  const rows = STREAM_FIELDS.map(f => `<tr><td class="tick"></td><td class="f">${FIELD_LABELS[f]}</td>
+    <td class="new"><textarea readonly class="streaming" rows="${f === "title" ? 1 : 3}" data-stream="${f}">${esc(show(p[f] || ""))}</textarea></td>
+    <td class="act"><span class="a-writing">writing…</span></td></tr>`).join("");
+  return `<div class="card is-streaming" data-card="${i}"><div class="card-side">
+      <img src="${img.thumb}" data-full="${esc(img.path)}"><div class="fname">${esc(img.rel)}</div>
+      <button class="img-write busy" disabled>Generating…</button></div>
+    <div><table class="rows">${rows}</table></div></div>`;
+}
+
+function bindCard(card) {
+  const i = +card.dataset.card;
+  card.querySelectorAll("img").forEach(im => im.onclick = () => zoom(im.dataset.full));
+  card.querySelectorAll("input[type=checkbox]").forEach(cb => cb.onchange = () => {
+    const img = state.preview[i];
     if (cb.dataset.old) img.rows.filter(r => r.group === "cleanup").forEach(r => (r.selected = cb.checked));
     else (cb.dataset.f ? img.rows.find(x => x.field === cb.dataset.f) : img.rows[cb.dataset.j]).selected = cb.checked;
-    renderPreview();                       // the box switches between the suggestion and the file's value
+    updateCard(i);                         // the box switches between the suggestion and the file's value
   });
-  $$("#previewList textarea, #previewList input[data-f]:not([type=checkbox])").forEach(el => el.oninput = () => edit(el));
-  $$("#previewList [data-w]").forEach(b => b.onclick = () => writeOne(+b.dataset.w));
+  card.querySelectorAll("textarea:not([readonly]), input[data-f]:not([type=checkbox])").forEach(el => el.oninput = () => edit(el));
+  card.querySelectorAll("[data-w]").forEach(b => b.onclick = () => writeOne(i));
+}
+
+// Redraw one card (and nothing else, so a card you're typing in is never disturbed).
+function updateCard(i) {
+  const old = $(`#previewList [data-card="${i}"]`);
+  if (!old) return;
+  const tmp = document.createElement("div");
+  tmp.innerHTML = cardHtml(state.preview[i], i);
+  const card = tmp.firstElementChild;
+  old.replaceWith(card);
+  bindCard(card);
   updateCount();
 }
 
@@ -521,7 +624,7 @@ async function writeOne(i) {
     if (Object.keys(r.errors || {}).length) { toast("Couldn't write: " + Object.values(r.errors)[0]); return; }
     const fresh = await api("/api/preview", previewOpts({ path: img.path }));
     if (fresh.images[0]) state.preview[i] = fresh.images[0];
-    renderPreview();
+    updateCard(i);
     refreshFolders();
     if (r.run_id) toast(`Wrote ${img.name}`, { label: "Undo", fn: () => undo(r.run_id) });
   } catch (e) { toast(e.message); }

@@ -1,3 +1,4 @@
+import json
 import os
 import shutil
 
@@ -49,8 +50,12 @@ class FakeBackend:
     def ensure(self):
         pass
 
-    def describe(self, system, user, image_b64):
+    def describe(self, system, user, image_b64, on_text=None):
         self.calls.append((system, user))
+        if on_text:                                   # stream the answer's JSON a few characters at a time
+            text = json.dumps(self.answer, ensure_ascii=False)
+            for n in range(8, len(text) + 8, 8):
+                on_text(text[:n])
         return dict(self.answer)
 
     def write(self, system, user, images_b64):

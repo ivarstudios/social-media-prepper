@@ -159,3 +159,11 @@ dialog h4 { margin: 18px 0 8px; }
 .choice { display: flex; gap: 20px; margin-bottom: 8px; }
 .panel { border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
 .panel .actions input { flex: 1; }
+
+/* the image the model is writing about right now */
+.card.is-streaming { border-color: var(--info); box-shadow: 0 0 0 1px var(--info); }
+.rows textarea.streaming { background: var(--keep); resize: none; }
+.img-write.busy { background: var(--info); color: #fff; opacity: .9; }
+.a-writing { color: var(--info); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+#jobText a { color: var(--accent); }

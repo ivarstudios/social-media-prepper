@@ -190,20 +190,37 @@ class OllamaBackend:
         if not self.has_model():
             raise VLMError(f"{self.model} still isn't installed after the download")
 
-    def _chat(self, system: str, user: str, images: list[str], schema: dict | None) -> str:
-        body = {"model": self.model, "stream": False, "keep_alive": "30m",
+    def _chat(self, system: str, user: str, images: list[str], schema: dict | None, on_text=None) -> str:
+        """The model's answer. on_text(text so far) is called as it streams in, when given."""
+        body = {"model": self.model, "stream": on_text is not None, "keep_alive": "30m",
                 "options": {"temperature": 0, "num_ctx": 16384},
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": user, "images": images}]}
         if schema:
             body["format"] = schema
-        r = self.http.post(f"{self.url}/api/chat", json=body)
-        if r.status_code != 200:
-            raise VLMError(f"Ollama {r.status_code}: {r.text[:300]}")
-        return (r.json().get("message") or {}).get("content", "")
+        if on_text is None:
+            r = self.http.post(f"{self.url}/api/chat", json=body)
+            if r.status_code != 200:
+                raise VLMError(f"Ollama {r.status_code}: {r.text[:300]}")
+            return (r.json().get("message") or {}).get("content", "")
+        text = ""
+        with self.http.stream("POST", f"{self.url}/api/chat", json=body) as r:
+            if r.status_code != 200:
+                raise VLMError(f"Ollama {r.status_code}: {r.read()[:300]!r}")
+            for line in r.iter_lines():
+                if not line:
+                    continue
+                msg = json.loads(line)
+                if msg.get("error"):
+                    raise VLMError(f"Ollama: {msg['error']}")
+                piece = (msg.get("message") or {}).get("content", "")
+                if piece:
+                    text += piece
+                    on_text(text)
+        return text
 
-    def describe(self, system: str, user: str, image_b64: str) -> dict:
-        content = self._chat(system, user, [image_b64], ImageMetadata.model_json_schema())
+    def describe(self, system: str, user: str, image_b64: str, on_text=None) -> dict:
+        content = self._chat(system, user, [image_b64], ImageMetadata.model_json_schema(), on_text)
         try:
             return ImageMetadata.model_validate_json(_json_part(content)).model_dump()
         except ValueError as e:
@@ -258,11 +275,20 @@ class ClaudeBackend:
             raise VLMError("Claude declined to describe this image")
         return r
 
-    def describe(self, system: str, user: str, image_b64: str) -> dict:
-        r = self._call(lambda: self.client.messages.parse(
-            model=self.model, max_tokens=16000, system=system, output_format=ImageMetadata,
-            output_config={"effort": self.effort},
-            messages=[{"role": "user", "content": self._content(user, [image_b64])}], **self._fallback))
+    def describe(self, system: str, user: str, image_b64: str, on_text=None) -> dict:
+        args = dict(model=self.model, max_tokens=16000, system=system, output_format=ImageMetadata,
+                    output_config={"effort": self.effort},
+                    messages=[{"role": "user", "content": self._content(user, [image_b64])}], **self._fallback)
+
+        def streamed():
+            text = ""
+            with self.client.messages.stream(**args) as s:
+                for piece in s.text_stream:
+                    text += piece
+                    on_text(text)
+                return s.get_final_message()
+
+        r = self._call(streamed if on_text else lambda: self.client.messages.parse(**args))
         if r.parsed_output is None:
             raise VLMError("Claude returned no metadata")
         return r.parsed_output.model_dump()
@@ -286,11 +312,69 @@ def _json_part(content: str) -> str:
     return m.group(0) if m else content
 
 
+# ---- reading an answer while it streams in -------------------------------------------------------------------
+
+_ESCAPES = {'"': '"', "\\": "\\", "/": "/", "n": "\n", "t": "\t", "r": "\r", "b": "\b", "f": "\f"}
+
+
+def _read_string(text: str, i: int) -> tuple[str, int, bool]:
+    """The JSON string starting at text[i] (just after its opening quote), as far as it has arrived.
+    Returns (value, index after it, whether it's closed)."""
+    out = []
+    while i < len(text):
+        c = text[i]
+        if c == '"':
+            return "".join(out), i + 1, True
+        if c == "\\":
+            if i + 1 >= len(text):
+                break
+            e = text[i + 1]
+            if e == "u":
+                if i + 6 > len(text):
+                    break                   # the rest of \uXXXX hasn't arrived yet
+                try:
+                    out.append(chr(int(text[i + 2:i + 6], 16)))
+                except ValueError:
+                    pass
+                i += 6
+                continue
+            out.append(_ESCAPES.get(e, e))
+            i += 2
+            continue
+        out.append(c)
+        i += 1
+    return "".join(out), len(text), False
+
+
+def partial_fields(text: str) -> dict:
+    """The text fields of an answer that's still arriving, finished and half-written ones."""
+    out: dict = {}
+    for key in ("title", "caption", "alt_text"):
+        m = re.search(r'"%s"\s*:\s*"' % key, text)
+        if m:
+            out[key] = _read_string(text, m.end())[0]
+    m = re.search(r'"keywords"\s*:\s*\[', text)
+    if m:
+        i, kws = m.end(), []
+        while True:
+            while i < len(text) and text[i] in " \n\r\t,":
+                i += 1
+            if i >= len(text) or text[i] != '"':
+                break
+            value, i, closed = _read_string(text, i + 1)
+            kws.append(value)
+            if not closed:
+                break
+        out["keywords"] = kws
+    return out
+
+
 # ---- calls ---------------------------------------------------------------------------------------------------
 
 def describe(be, pixel_id: str, image_b64_fn, facts: list[str], brief_context: str, own_text: dict,
-             language: str) -> tuple[dict, bool]:
-    """(metadata, from_cache). image_b64_fn is only called when the answer isn't cached."""
+             language: str, on_partial=None) -> tuple[dict, bool]:
+    """(metadata, from_cache). image_b64_fn is only called when the answer isn't cached.
+    on_partial(fields) is called with the text fields as they stream in (not for cached answers)."""
     system = SYSTEM.format(language=LANGUAGES.get(language, "English"))
     user = build_user(facts, brief_context, own_text)
     key = hashlib.sha1(json.dumps([PROMPT_VERSION, be.name, be.model, pixel_id, system, user],
@@ -298,7 +382,8 @@ def describe(be, pixel_id: str, image_b64_fn, facts: list[str], brief_context: s
     hit = store.cache_get(key)
     if hit is not None:
         return clean(hit), True
-    meta = be.describe(system, user, image_b64_fn(be.image_px))
+    on_text = (lambda text: on_partial(partial_fields(text))) if on_partial else None
+    meta = be.describe(system, user, image_b64_fn(be.image_px), on_text=on_text)
     store.cache_put(key, meta, be.model)
     return clean(meta), False
 

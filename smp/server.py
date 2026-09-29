@@ -29,7 +29,10 @@ class Session:
         self.recursive = True
         self.files: dict[str, images.ImageFile] = {}
         self.results: dict[str, dict] = {}         # path -> {"ai": {...}} or {"error": "..."}
-        self.job = {"running": False, "done": 0, "total": 0, "cached": 0, "errors": 0, "message": "", "stop": False}
+        self.job = {"running": False, "done": 0, "total": 0, "cached": 0, "errors": 0, "message": "", "stop": False,
+                    "current": "", "partial": {}, "finished": []}
+        # current: the image being described; partial: its text fields as they stream in;
+        # finished: every image with an answer (or an error) so far, in order
         self.last_run: dict | None = None
 
     def exiftool(self) -> ExifTool:
@@ -151,11 +154,13 @@ def run_job(folder: str | None, backend_name: str | None) -> None:
             if d not in briefs:
                 briefs[d] = brief.resolve(d, defaults)
             b = briefs[d]
+            job.update(current=str(img.path), partial={})
             try:
                 place = place_for(img)
                 facts = images.facts(img, S.root, place.label() if place else "")
                 ai, cached = vlm.describe(be, images.pixel_id(img), lambda px, p=img.path: images.jpeg_b64(p, px),
-                                          facts, b.context, plan.own_text(img.meta), b.meta.get("language", "en"))
+                                          facts, b.context, plan.own_text(img.meta), b.meta.get("language", "en"),
+                                          on_partial=lambda fields: job.update(partial=fields))
                 S.results[str(img.path)] = {"ai": ai, "model": be.model, "brief": b.digest}
                 job["cached"] += int(cached)
             except Exception as e:
@@ -164,7 +169,10 @@ def run_job(folder: str | None, backend_name: str | None) -> None:
                 job["errors"] += 1
                 if isinstance(e, vlm.VLMError) and job["errors"] >= 3 and job["done"] == 0:
                     job["message"] = f"Stopped: {e}"
+                    job["finished"].append(str(img.path))
                     break
+            job["finished"].append(str(img.path))
+            job.update(current="", partial={})
             job["done"] += 1
         else:
             job["message"] = "Done"
@@ -172,7 +180,7 @@ def run_job(folder: str | None, backend_name: str | None) -> None:
         log.exception("job failed")
         job["message"] = f"Failed: {e}"
     finally:
-        job["running"] = False
+        job.update(running=False, current="", partial={})
 
 
 # ---- app -----------------------------------------------------------------------------------------------------
@@ -362,7 +370,8 @@ def create_app() -> FastAPI:
             raise HTTPException(409, "Already running")
         if not S.files:
             raise HTTPException(400, "Scan a folder first")
-        S.job.update(running=True, stop=False, done=0, total=0, errors=0, cached=0, message="Starting...")
+        S.job.update(running=True, stop=False, done=0, total=0, errors=0, cached=0, message="Starting...",
+                     current="", partial={}, finished=[])
         threading.Thread(target=run_job, args=(body.get("folder") or None, body.get("backend")),
                          daemon=True).start()
         return {"started": True}
@@ -373,8 +382,13 @@ def create_app() -> FastAPI:
         return {"stopping": S.job["running"]}
 
     @app.get("/api/job")
-    def job():
-        return {k: v for k, v in S.job.items() if k != "stop"}
+    def job(since: int = 0):
+        """The generate job. finished lists only the images done after the first `since`, so the page can ask
+        several times a second without receiving the whole list each time."""
+        out = {k: v for k, v in S.job.items() if k not in ("stop", "finished")}
+        out["finished"] = S.job["finished"][since:]
+        out["finished_total"] = len(S.job["finished"])
+        return out
 
     @app.post("/api/preview")
     def preview(body: dict = Body(default={})):

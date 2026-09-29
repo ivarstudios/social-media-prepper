@@ -50,7 +50,9 @@ machine yet.*
 1. **Scan** a folder (with or without subfolders). The left column lists every folder and whether it has a brief.
 2. **Brief**: write a few sentences about the set and fill in credits. *Draft from photos* suggests a text
    from sample images. Saving writes `brief.md` into that folder.
-3. **Generate** for one folder or all of them.
+3. **Generate** for one folder or all of them. *Review & write* opens and each image's title, caption,
+   alt text and keywords appear as the model writes them, so you can proofread and write the first images while
+   the rest are still being described.
 4. **Review & write**: every image with its fields, as the file holds them and as they'd change. Untick
    suggestions you don't want, edit any text, and write one image with its own button (orange: unsaved changes,
    green: written) or everything with *Write all*. Written images stay here, so you can come back and fix a
