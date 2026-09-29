@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IVAR SMP</title>
+<link rel="icon" type="image/svg+xml" href="/static/smp-icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/smp-icon-32.png">
+<link rel="apple-touch-icon" href="/static/smp-icon-256.png">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="/static/smp-icon.svg" alt=""><div>IVAR <b>SMP</b><span>Social Media Prepper</span></div></div>
+  <form id="scanForm" class="scan">
+    <input id="folder" list="recent" placeholder="Folder with finished images, e.g. D:\Photos\2024 Summer trip" autocomplete="off">
+    <datalist id="recent"></datalist>
+    <button type="button" id="browseBtn" class="ghost">Choose folder</button>
+    <label class="check"><input type="checkbox" id="recursive" checked> Subfolders</label>
+    <button type="submit">Scan</button>
+  </form>
+  <div class="right">
+    <select id="backend" title="Vision model">
+      <option value="ollama">Local model</option>
+      <option value="claude">Claude API</option>
+    </select>
+    <button id="setupBtn" class="ghost"><span id="statusDot" class="dot"></span> Setup</button>
+    <button id="settingsBtn" class="ghost">Settings</button>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="side">
+    <div class="side-head"><span id="rootName">No folder scanned</span><small id="rootCount"></small></div>
+    <ul id="folderList" class="folders"></ul>
+  </aside>
+
+  <section class="main">
+    <div id="empty" class="empty">
+      <h1>Scan a folder of finished images</h1>
+      <p>SMP reads each folder's <code>brief.md</code>, has a vision model write title, caption, alt text,
+        keywords and more, shows you every change, and writes only what you approve into the files.</p>
+      <p class="small-text">Made by IVAR Studios · <span id="versionTag"></span></p>
+    </div>
+
+    <div id="work" hidden>
+      <div class="folder-head">
+        <div>
+          <h2 id="folderName"></h2>
+          <div id="folderMeta" class="muted"></div>
+        </div>
+        <div class="gen">
+          <button id="genFolder">Generate for this folder</button>
+          <button id="genAll" class="ghost">Generate for all</button>
+        </div>
+      </div>
+      <div id="jobBar" class="job" hidden>
+        <div class="bar"><div id="jobFill"></div></div>
+        <span id="jobText"></span>
+        <button id="stopBtn" class="ghost small">Stop</button>
+      </div>
+
+      <nav class="tabs">
+        <button data-tab="brief" class="active">Brief</button>
+        <button data-tab="images">Images</button>
+        <button data-tab="preview">Preview &amp; write</button>
+      </nav>
+
+      <div id="tab-brief" class="tab">
+        <div id="parents"></div>
+        <div id="briefState" class="note"></div>
+        <form id="briefForm" class="brief">
+          <div class="grid">
+            <label>Set name<input name="set"></label>
+            <label>Language<select name="language"><option value="" id="langInherit">Default</option><option value="en">English</option><option value="sv">Swedish</option></select></label>
+            <label>Creator<input name="creator"></label>
+            <label>Credit line<input name="credit"></label>
+            <label>Copyright<input name="copyright"></label>
+            <label class="wide">Usage terms<input name="usage" placeholder="e.g. Not for commercial use without permission"></label>
+            <label>Place<input name="place" placeholder="e.g. Lake Bled"></label>
+            <label>City<input name="city"></label>
+            <label>Region<input name="region"></label>
+            <label>Country<input name="country"></label>
+            <label class="check"><input type="checkbox" name="no_geotag"> Remove GPS from files (sensitive location)</label>
+            <label class="check"><input type="checkbox" name="sensitive"> Sensitive content</label>
+          </div>
+          <label class="body">About this set: what, where, when, why, anything a caption writer should know
+            <textarea name="body" rows="9" placeholder="e.g. A week of hiking in the Alps with friends, July 2024. Mountain huts, glacier crossings, early starts and long evenings..."></textarea>
+          </label>
+          <div class="actions">
+            <button type="submit">Save brief.md</button>
+            <button type="button" id="draftBtn" class="ghost">Draft from photos</button>
+            <span id="briefMsg" class="muted"></span>
+          </div>
+        </form>
+      </div>
+
+      <div id="tab-images" class="tab" hidden>
+        <div id="imageGrid" class="thumbs"></div>
+      </div>
+
+      <div id="tab-preview" class="tab" hidden>
+        <div class="preview-bar">
+          <label class="check"><input type="checkbox" id="replaceHuman"> Replace text a person wrote</label>
+          <label class="check"><input type="checkbox" id="overrideCredits"> Replace existing credits with the brief's</label>
+          <label class="check"><input type="checkbox" id="scopeAll"> All folders</label>
+          <span class="spacer"></span>
+          <span id="selCount" class="muted"></span>
+          <button id="writeBtn">Write to files</button>
+        </div>
+        <div id="lastRun" class="note" hidden></div>
+        <div id="previewList"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<dialog id="settingsDlg">
+  <form method="dialog" id="settingsForm">
+    <h3>Settings</h3>
+    <p class="muted">Defaults for new briefs. Each brief.md can override them.</p>
+    <div class="grid">
+      <label>Creator<input name="creator"></label>
+      <label>Credit line<input name="credit"></label>
+      <label>Copyright<input name="copyright"></label>
+      <label>Default language<select name="language"><option value="en">English</option><option value="sv">Swedish</option></select></label>
+      <label>Default model<select name="backend"><option value="ollama">Local (Ollama)</option><option value="claude">Claude API</option></select></label>
+    </div>
+    <h4>Advanced</h4>
+    <p class="muted">Leave these empty to let SMP find them. The Claude key is set in Setup.</p>
+    <div class="grid">
+      <label>Local model (empty: best for this GPU)<input name="ollama_model"></label>
+      <label>Ollama address<input name="ollama_url"></label>
+      <label class="wide">Ollama program<input name="ollama_exe"></label>
+      <label class="wide">Models folder<input name="ollama_models_dir"></label>
+      <label>Claude model<input name="claude_model"></label>
+      <label>Claude effort<select name="claude_effort"><option>low</option><option>medium</option><option>high</option></select></label>
+      <label class="wide">ExifTool<input name="exiftool"></label>
+    </div>
+    <div class="actions"><button value="cancel" class="ghost">Cancel</button><button value="save">Save</button></div>
+  </form>
+</dialog>
+
+<dialog id="setupDlg">
+  <form method="dialog">
+    <div class="setup-head"><img src="/static/smp-icon.svg" alt=""><div><h3>Setup</h3>
+      <p class="muted">IVAR SMP needs ExifTool and one vision model: a local one on this computer, or the Claude API.</p></div></div>
+    <div class="check-row" id="suExif"></div>
+    <h4>Vision model</h4>
+    <div class="choice">
+      <label class="check"><input type="radio" name="suBackend" value="ollama"> Local, on this computer</label>
+      <label class="check"><input type="radio" name="suBackend" value="claude"> Claude API</label>
+    </div>
+    <div id="suLocal" class="panel">
+      <div id="suGpu" class="muted"></div>
+      <div id="suModel"></div>
+      <div id="suPull" class="job" hidden><div class="bar"><div id="suPullFill"></div></div><span id="suPullText" class="muted"></span></div>
+      <div class="actions"><button type="button" id="suPullBtn">Download model</button></div>
+    </div>
+    <div id="suClaude" class="panel" hidden>
+      <p class="muted">Better-written text. Every image is uploaded to Anthropic and billed to your API account.</p>
+      <div id="suKeyState"></div>
+      <div class="actions"><input type="password" id="suKey" placeholder="API key (sk-ant-...)" autocomplete="off">
+        <button type="button" id="suKeyBtn">Save key</button></div>
+    </div>
+    <p id="suPlaces" class="muted small-text"></p>
+    <div class="actions"><span class="spacer"></span><button value="close">Done</button></div>
+  </form>
+</dialog>
+
+<dialog id="confirmDlg">
+  <form method="dialog">
+    <h3 id="confirmTitle"></h3>
+    <p id="confirmText"></p>
+    <div class="actions" id="confirmActions"></div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
