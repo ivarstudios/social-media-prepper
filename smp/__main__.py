@@ -4,12 +4,16 @@ python -m smp doctor: check this computer's setup (used by the installer)."""
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import socket
+import subprocess
 import sys
 import threading
+import urllib.request
 import webbrowser
+from pathlib import Path
 
 from smp import __version__, config
 
@@ -20,6 +24,49 @@ def free_port(start: int) -> int:
             if s.connect_ex(("127.0.0.1", port)) != 0:
                 return port
     return start
+
+
+def running_at(port: int) -> bool:
+    """IVAR SMP already answers on this port (started earlier, its window since closed)."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/openapi.json", timeout=1) as r:
+            return json.load(r).get("info", {}).get("title") == "IVAR SMP"
+    except (OSError, ValueError):
+        return False
+
+
+def open_window(url: str) -> None:
+    """A window of its own (Chrome or Edge app mode: no tabs, SMP's icon and name in the taskbar), else a
+    browser tab."""
+    if sys.platform == "win32":
+        roots = [os.environ.get(k, "") for k in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")]
+        for sub in (r"Google\Chrome\Application\chrome.exe", r"Microsoft\Edge\Application\msedge.exe"):
+            for root in roots:
+                exe = Path(root) / sub
+                if root and exe.exists():
+                    subprocess.Popen([str(exe), f"--app={url}", "--window-size=1440,960"])
+                    return
+    webbrowser.open(url)
+
+
+def brand_console() -> None:
+    """SMP's icon on the console window (the one that keeps the server running). Only the classic console
+    has one to change; in Windows Terminal this does nothing."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    ico = Path(__file__).parent / "static" / "smp-icon.ico"
+    hwnd = ctypes.windll.kernel32.GetConsoleWindow()
+    if not hwnd or not ico.exists():
+        return
+    user32 = ctypes.windll.user32
+    user32.LoadImageW.restype = ctypes.c_void_p
+    user32.SendMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p, ctypes.c_void_p]
+    for which, size in ((0, 16), (1, 32)):                       # WM_SETICON: ICON_SMALL, ICON_BIG
+        h = user32.LoadImageW(None, str(ico), 1, size, size, 0x10)   # IMAGE_ICON, LR_LOADFROMFILE
+        if h:
+            user32.SendMessageW(hwnd, 0x80, which, h)
 
 
 def doctor() -> int:
@@ -69,13 +116,20 @@ def main() -> None:
 
     from smp.server import S, create_app
 
-    port = a.port or free_port(int(config.load().get("port") or 8765))
+    home = a.port or int(config.load().get("port") or 8765)
+    if not a.folder and running_at(home):
+        print("IVAR SMP is already running: opening its window")
+        if not a.no_browser:
+            open_window(f"http://127.0.0.1:{home}/")
+        return
+    port = free_port(home)
     url = f"http://127.0.0.1:{port}/"
+    brand_console()
     if a.folder:
         S.scan(a.folder, True)
     print(f"IVAR SMP {__version__} is running at {url}  (close this window to stop it)")
     if not a.no_browser:
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
+        threading.Timer(1.2, lambda: open_window(url)).start()
     uvicorn.run(create_app(), host="127.0.0.1", port=port, log_level="warning")
 
 

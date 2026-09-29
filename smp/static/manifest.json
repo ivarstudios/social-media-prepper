@@ -1,0 +1,13 @@
+{
+  "name": "IVAR SMP",
+  "short_name": "IVAR SMP",
+  "description": "Captions, alt text and keywords for finished images",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#151514",
+  "theme_color": "#1f1f1d",
+  "icons": [
+    {"src": "/static/smp-icon-256.png", "sizes": "256x256", "type": "image/png"},
+    {"src": "/static/smp-icon.svg", "sizes": "any", "type": "image/svg+xml"}
+  ]
+}
