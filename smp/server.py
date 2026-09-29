@@ -129,7 +129,7 @@ def in_scope(path: str, folder: str | None) -> bool:
 
 # ---- generation job ------------------------------------------------------------------------------------------
 
-def run_job(folder: str | None, backend_name: str | None) -> None:
+def run_job(folder: str | None, backend_name: str | None, paths: list[str] | None = None) -> None:
     s = config.load()
     job = S.job
     try:
@@ -142,7 +142,10 @@ def run_job(folder: str | None, backend_name: str | None) -> None:
                 geocoder().download()
             except Exception as e:          # places stay empty; everything else still works
                 log.warning("GeoNames download failed: %s", e)
-        todo = [f for p, f in S.files.items() if in_scope(p, folder)]
+        if paths:
+            todo = [S.files[p] for p in paths if p in S.files]
+        else:
+            todo = [f for p, f in S.files.items() if in_scope(p, folder)]
         job.update(total=len(todo), done=0, cached=0, errors=0, message=f"Describing with {be.model}")
         defaults = defaults_from(s)
         briefs: dict[Path, brief.Resolved] = {}
@@ -372,7 +375,8 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "Scan a folder first")
         S.job.update(running=True, stop=False, done=0, total=0, errors=0, cached=0, message="Starting...",
                      current="", partial={}, finished=[])
-        threading.Thread(target=run_job, args=(body.get("folder") or None, body.get("backend")),
+        # "paths": just these images (a card's Generate button), else the folder, else everything
+        threading.Thread(target=run_job, args=(body.get("folder") or None, body.get("backend"), body.get("paths")),
                          daemon=True).start()
         return {"started": True}
 
@@ -411,7 +415,8 @@ def create_app() -> FastAPI:
             rows = plan.propose(f.meta, res.get("ai"), briefs[d].meta, place_for(f), **opts)
             current = {name: field_value(f.meta, name) for name in plan.EDITABLE}
             out.append({"path": p, "name": f.path.name, "rel": rel(f.path, S.root), "thumb": thumb_url(p),
-                        "error": res.get("error"), "rows": plan.rows_json(rows), "current": current,
+                        "error": res.get("error"), "described": "ai" in res, "rows": plan.rows_json(rows),
+                        "current": current,
                         "done": bool(current["caption"]) and bool(current["alt_text"])})
         return {"images": out}
 

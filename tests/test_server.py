@@ -182,3 +182,17 @@ def test_job_reports_finished_images_incrementally(client, tmp_path):
     assert j["finished_total"] == 2 and sorted(j["finished"]) == sorted([str(a), str(b)])
     assert c.get("/api/job", params={"since": 2}).json()["finished"] == []
     assert j["current"] == "" and j["partial"] == {}
+
+
+def test_generate_just_the_images_asked_for(client, tmp_path):
+    c, fake = client
+    d = tmp_path / "Set"
+    a = make_image(d / "a.jpg")
+    make_image(d / "b.jpg", color=(9, 9, 9))
+    c.post("/api/scan", json={"folder": str(d), "recursive": True})
+    c.post("/api/generate", json={"folder": str(d), "paths": [str(a)]})
+    j = wait_job(c)
+    assert (j["total"], j["done"], j["finished"]) == (1, 1, [str(a)])
+    rows = {i["path"]: i["rows"] for i in c.post("/api/preview", json={"folder": str(d)}).json()["images"]}
+    assert any(r["field"] == "caption" for r in rows[str(a)])
+    assert not any(r["field"] == "caption" for r in rows[str(d / "b.jpg")])

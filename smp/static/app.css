@@ -77,7 +77,8 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .legend-dots { font-size: 11px; color: var(--muted); margin-top: 4px; }
 
 .main { min-width: 0; }
-.content { padding: var(--page-y) var(--page-x) 80px; }
+/* a readable line length for the fields, centred in the main column */
+.content { padding: var(--page-y) var(--page-x) 80px; max-width: 1200px; margin: 0 auto; }
 .empty { max-width: 620px; margin: 10vh auto; text-align: center; color: var(--muted); }
 .empty h1 { color: var(--ink); font-weight: 600; }
 .folder-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
@@ -115,7 +116,8 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .card { display: grid; grid-template-columns: 220px 1fr; gap: var(--gap); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: var(--card-pad); margin-bottom: var(--gap); }
 .card img { width: 220px; border-radius: 6px; display: block; cursor: zoom-in; }
 .card-side { display: flex; flex-direction: column; gap: 8px; }
-.img-write { width: 100%; margin-top: 4px; }
+.img-write, .img-gen { width: 100%; }
+.img-gen { margin-top: 4px; }
 .img-write.dirty { background: var(--warn); color: #fff; }
 .img-write.saved { background: var(--good); color: #fff; opacity: 1; }
 .img-write.empty { background: transparent; color: var(--muted); border: 1px solid var(--line); }

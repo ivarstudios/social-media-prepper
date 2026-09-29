@@ -345,6 +345,18 @@ async function generate(all) {
     poll();
   } catch (e) { toast(e.message); }
 }
+// A card's Generate button: just that image, shown in place without leaving the list.
+async function generateOne(i) {
+  try {
+    await api("/api/generate", { paths: [state.preview[i].path], backend: $("#backend").value });
+    state.jobRunning = true;
+    $$("#previewList .img-gen").forEach(b => (b.disabled = true));
+    state.finishedSeen = 0;
+    state.streamingPath = "";
+    poll();
+  } catch (e) { toast(e.message); }
+}
+
 $("#genFolder").onclick = () => generate(false);
 $("#genAll").onclick = () => generate(true);
 $("#stopBtn").onclick = () => api("/api/stop", {});
@@ -363,6 +375,8 @@ async function poll() {
   if (jump) jump.onclick = e => { e.preventDefault(); scrollToImage(j.current); };
   $("#stopBtn").hidden = !j.running;
   $("#genFolder").disabled = $("#genAll").disabled = j.running;
+  state.jobRunning = j.running;
+  $$("#previewList .img-gen").forEach(b => (b.disabled = j.running));
 
   await state.previewReady;
   state.finishedSeen = j.finished_total;
@@ -501,6 +515,10 @@ function otherRows(img, i) {    // GPS removal and old fields: a tick, nothing t
   return html;
 }
 
+function genButton(img, i) {
+  return `<button class="img-gen ghost" data-g="${i}" ${state.jobRunning ? "disabled" : ""}>${img.described ? "Generate again" : "Generate"}</button>`;
+}
+
 function writeButton(img, i) {
   const st = cardState(img);
   const label = { dirty: "Write", saved: "Written ✓", empty: "Nothing to write" }[st];
@@ -529,7 +547,7 @@ function cardHtml(img, i) {
   return `<div class="card" data-card="${i}"><div class="card-side">
       <img loading="lazy" src="${img.thumb}" data-full="${esc(img.path)}">
       <div class="fname">${esc(img.rel)}</div>${img.error ? `<div class="err">${esc(img.error)}</div>` : ""}
-      ${writeButton(img, i)}</div>
+      ${genButton(img, i)}${writeButton(img, i)}</div>
     <div><table class="rows">${MAIN_FIELDS.map(f => fieldRow(img, i, f)).join("")}${otherRows(img, i)}</table>
       <details class="more" ${moreOpen ? "open" : ""}><summary>Location and credits</summary>
         <table class="rows">${MORE_FIELDS.map(f => fieldRow(img, i, f)).join("")}</table></details></div></div>`;
@@ -559,6 +577,7 @@ function bindCard(card) {
   });
   card.querySelectorAll("textarea:not([readonly]), input[data-f]:not([type=checkbox])").forEach(el => el.oninput = () => edit(el));
   card.querySelectorAll("[data-w]").forEach(b => b.onclick = () => writeOne(i));
+  card.querySelectorAll("[data-g]").forEach(b => b.onclick = () => generateOne(i));
 }
 
 // Redraw one card (and nothing else, so a card you're typing in is never disturbed).
