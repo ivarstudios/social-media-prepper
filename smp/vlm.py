@@ -21,15 +21,16 @@ from pydantic import BaseModel, Field
 from smp import machine, store
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = "4"
+PROMPT_VERSION = "5"
 LANGUAGES = {"en": "English", "sv": "Swedish"}
 
 
 class ImageMetadata(BaseModel):
     # min_length: a small model otherwise leaves fields empty when there's no brief to draw context from
     title: str = Field(min_length=1, description="3-8 words naming what the image shows. No ending period.")
-    caption: str = Field(min_length=1, description="1-3 sentences: what the image shows, then any context from "
-                                                   "the brief that applies to it.")
+    caption: str = Field(min_length=1, description="1-3 sentences: first what this moment is, from the brief "
+                                                   "(the event, the place, why it matters), then what the image "
+                                                   "adds. Not a copy of the alt text.")
     alt_text: str = Field(min_length=1, description="Alt text for screen readers: what is visible, 1-2 sentences, "
                                                     "under 250 characters.")
     keywords: list[str] = Field(min_length=1, description="6-15 lowercase keywords.")
@@ -45,17 +46,25 @@ sometimes text the photographer already wrote for this image.
 Rules:
 - Statements about what the image shows come only from the image itself.
 - Context (project, place names, events, purpose, organisations) comes only from the brief, the file facts \
-or the photographer's own text. Use it only where it plausibly applies to this image. Never invent details, \
-dates, names or numbers.
+or the photographer's own text. Never invent details, dates, names or numbers.
+- The brief is about the whole set: take it that each image is part of the event or project it describes, \
+unless the image clearly isn't.
+- The caption tells the story. Start with what this moment is in the light of the brief: the event, the place \
+and why it matters. Then add what the image shows that the context doesn't already say. Don't repeat the alt \
+text. At most 3 sentences; don't open with "This image" or "A moment from", and add no moods or feelings the \
+image doesn't plainly show.
 - The photographer's own text for this image is true: keep its facts and never contradict it.
-- Never name people, even when the brief or the photographer's text names them. Describe them generically, \
-for example "a hiker in a red jacket" or "two children". Never state or guess anyone's ethnicity, religion, \
-health, disability, sexual orientation, political views, legal status or how people are related.
+- People: use the names, roles and relationships the brief or the photographer's text gives (for example \
+"the couple", "the bride and groom", "the officiant"). Put a name on a particular person only when the brief \
+and the image make clear who it is, such as the couple kissing at their own wedding; otherwise tie the names to \
+the event ("friends at Anna and Erik's wedding") and describe the people generically, for example "a hiker in \
+a red jacket". Never guess names, roles or relationships the brief doesn't give. Never state or guess anyone's \
+ethnicity, religion, health, disability, sexual orientation, political views or legal status.
 - Plain, factual language. No hype, no hashtags, no emoji, no em dashes.
 - The alt text describes only what is visible, without "image of" or "photo of", and quotes short visible \
 text exactly. It gives no background the image doesn't show.
-- Keywords: subjects, setting, activity, landscape and place names from the brief or file facts. No people's \
-names, no words like "photo" or "image".
+- Keywords: subjects, setting, activity, event, landscape and place names from the brief or file facts, and \
+the names of people the brief names who are in the image. No words like "photo" or "image".
 - Always fill in the title, caption, alt text and keywords, also without a brief: then describe what is visible.
 - Write every text field in {language}. Keywords too."""
 

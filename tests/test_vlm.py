@@ -18,7 +18,7 @@ def test_prompt_carries_brief_own_text_and_language():
     vlm.describe(be, "p", lambda px: "b", ["Captured: 2024-07-12"], "Alps hike.",
                  {"caption": "Glacier at sunset."}, "sv")
     system, user = be.calls[0]
-    assert "Swedish" in system and "Never name people" in system
+    assert "Swedish" in system and "Never guess names" in system
     assert "Alps hike." in user and "Glacier at sunset." in user and "2024-07-12" in user
 
 

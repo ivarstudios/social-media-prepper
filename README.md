@@ -112,8 +112,10 @@ Only what matters when preparing images for social media:
 that earlier versions wrote and SMP no longer uses (flags, focal point, crops, season and so on) show up in the preview as
 *remove*, but only where SMP wrote them.
 
-Rules the model follows: it never names people, never guesses ethnicity, religion, health or relationships,
-takes place names and story only from the brief and file facts, and writes no em dashes.
+Rules the model follows: the caption starts with the story from the brief (the event, the place, why it matters)
+and the alt text sticks to what is visible. It names people, their roles and relationships only as the brief gives
+them, never guesses names, relationships, ethnicity, religion or health, takes place names and story only from the
+brief and file facts, and writes no em dashes.
 
 ## Your text is safe
 
