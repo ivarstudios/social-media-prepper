@@ -153,6 +153,28 @@ def test_folder_progress_for_step_dots(client, tmp_path):
     assert c.get("/api/folders").json()["folders"][0]["stale"] == 1       # written with the old brief
 
 
+def test_scan_again_reads_only_that_folder(client, tmp_path):
+    c, _ = client
+    root = tmp_path / "Personal"
+    make_image(root / "Wedding" / "a.jpg")
+    make_image(root / "Wedding" / "b.jpg", color=(1, 2, 3))
+    make_image(root / "Cabin" / "c.jpg")
+    c.post("/api/scan", json={"folder": str(root), "recursive": True})
+    wedding = next(f["path"] for f in c.get("/api/folders").json()["folders"] if f["rel"].endswith("Wedding"))
+    c.post("/api/generate", json={"folder": wedding})
+    wait_job(c)
+
+    (root / "Wedding" / "b.jpg").unlink()
+    make_image(root / "Wedding" / "d.jpg", color=(9, 9, 9))
+    make_image(root / "Cabin" / "e.jpg", color=(9, 9, 9))           # another folder: not read again
+    r = c.post("/api/rescan", json={"folder": wedding}).json()
+    counts = {f["rel"].split("/")[-1]: (f["images"], f["pending"]) for f in r["folders"]}
+    assert counts["Wedding"] == (2, 1) and counts["Cabin"] == (1, 0)   # a.jpg keeps its answer, d.jpg is new
+    names = [i["name"] for i in c.get("/api/images", params={"folder": wedding}).json()]
+    assert names == ["a.jpg", "d.jpg"]
+    assert c.post("/api/rescan", json={"folder": str(tmp_path)}).status_code == 400
+
+
 def test_fix_a_detail_after_writing(client, tmp_path):
     c, _ = client
     d = tmp_path / "Set"

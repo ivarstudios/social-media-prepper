@@ -368,6 +368,18 @@ $("#genFolder").onclick = () => generate(false);
 $("#genAll").onclick = () => generate(true);
 $("#stopBtn").onclick = () => api("/api/stop", {});
 
+$("#rescanFolder").onclick = async () => {
+  const btn = $("#rescanFolder"), folder = state.folder;
+  btn.disabled = true;
+  btn.textContent = "Scanning...";
+  try {
+    setFolders(await api("/api/rescan", { folder }));
+    await selectFolder(state.folders.some(f => f.path === folder) ? folder : state.root);
+  } catch (e) { toast(e.message); }
+  btn.disabled = state.jobRunning;
+  btn.textContent = "Scan again";
+};
+
 async function poll() {
   clearTimeout(state.pollTimer);
   let j;
@@ -381,7 +393,7 @@ async function poll() {
   const jump = $("#jumpNow");
   if (jump) jump.onclick = e => { e.preventDefault(); scrollToImage(j.current); };
   $("#stopBtn").hidden = !j.running;
-  $("#genFolder").disabled = $("#genAll").disabled = j.running;
+  $("#genFolder").disabled = $("#genAll").disabled = $("#rescanFolder").disabled = j.running;
   state.jobRunning = j.running;
   $$("#previewList .img-gen").forEach(b => (b.disabled = j.running));
 

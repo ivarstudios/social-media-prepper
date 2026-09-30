@@ -51,6 +51,23 @@ class Session:
             self.files = {str(p): images.ImageFile(p, metas.get(os.path.normpath(str(p)), {})) for p in paths}
         config.remember_folder(str(root))
 
+    def rescan_folder(self, folder: str) -> None:
+        """Read one folder's images again (not its subfolders): removed files go, new ones come in."""
+        d = Path(folder).expanduser().resolve()
+        if not self.root or not (d == self.root or self.root in d.parents):
+            raise HTTPException(400, f"Not in the scanned folder: {folder}")
+        paths = images.list_images(d, False) if d.is_dir() else []
+        metas = self.exiftool().read([str(p) for p in paths]) if paths else {}
+        with self.lock:
+            keep = {str(p) for p in paths}
+            for p in [p for p, f in self.files.items() if f.path.parent == d]:
+                del self.files[p]
+                if p not in keep:
+                    self.results.pop(p, None)       # answers for images still there stay, unwritten or not
+            for p in paths:
+                self.files[str(p)] = images.ImageFile(p, metas.get(os.path.normpath(str(p)), {}))
+            self.files = dict(sorted(self.files.items(), key=lambda kv: kv[1].path))
+
     def refresh(self, paths: list[str]) -> None:
         metas = self.exiftool().read(paths)
         with self.lock:
@@ -285,6 +302,13 @@ def create_app() -> FastAPI:
         if S.job["running"]:
             raise HTTPException(409, "A job is running")
         S.scan(body["folder"], bool(body.get("recursive", True)))
+        return {"root": str(S.root), "folders": S.folders(), "images": len(S.files)}
+
+    @app.post("/api/rescan")
+    def rescan(body: dict = Body(...)):
+        if S.job["running"]:
+            raise HTTPException(409, "A job is running")
+        S.rescan_folder(body["folder"])
         return {"root": str(S.root), "folders": S.folders(), "images": len(S.files)}
 
     @app.get("/api/folders")
