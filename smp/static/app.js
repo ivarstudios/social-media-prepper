@@ -235,6 +235,8 @@ async function selectFolder(path) {
   $("#folderName").textContent = f.rel.split("/").pop();
   $("#folderMeta").textContent = `${f.rel} · ${f.images} image${f.images === 1 ? "" : "s"} here`;
   $("#genFolder").disabled = !f.images;
+  $("#genAll").hidden = path !== state.root;                     // "all" only from the top folder
+  $("#genFolder").hidden = path === state.root && !f.images;
   await loadBrief();
   const tab = $(".tabs .active").dataset.tab;
   if (tab === "images") loadImages();
@@ -245,10 +247,15 @@ async function selectFolder(path) {
 $$(".tabs button").forEach(b => b.onclick = () => {
   $$(".tabs button").forEach(x => x.classList.toggle("active", x === b));
   $$(".tab").forEach(t => (t.hidden = t.id !== "tab-" + b.dataset.tab));
+  $("#previewBar").hidden = b.dataset.tab !== "preview";
   if (b.dataset.tab === "images") loadImages();
   if (b.dataset.tab === "preview") loadPreview();
 });
 function openTab(name) { $(`.tabs button[data-tab="${name}"]`).click(); }
+
+// the folder header sticks just under the scan bar, whose height changes when it wraps
+new ResizeObserver(() => document.documentElement.style.setProperty("--scan-h", $("#scanForm").offsetHeight + "px"))
+  .observe($("#scanForm"));
 
 // ---- brief --------------------------------------------------------------------------------------------------
 async function loadBrief() {

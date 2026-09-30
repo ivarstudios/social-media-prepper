@@ -54,6 +54,7 @@
     </div>
 
     <div id="work" hidden>
+      <div class="work-head">
       <div class="folder-head">
         <div>
           <h2 id="folderName"></h2>
@@ -76,6 +77,19 @@
         <button data-tab="images">Images</button>
         <button data-tab="preview">Review &amp; write</button>
       </nav>
+      <div id="previewBar" class="preview-bar" hidden>
+        <label class="check"><input type="checkbox" id="replaceHuman"> Replace text a person wrote</label>
+        <label class="check"><input type="checkbox" id="overrideCredits"> Replace existing credits with the brief's</label>
+        <label class="check"><input type="checkbox" id="scopeAll"> All folders</label>
+        <select id="pvFilter" class="pv-filter" title="Which images to show">
+          <option value="all">All images</option>
+          <option value="unsaved">Unsaved only</option>
+        </select>
+        <span class="spacer"></span>
+        <span id="selCount" class="muted"></span>
+        <button id="writeBtn">Write all</button>
+      </div>
+      </div>
 
       <div id="tab-brief" class="tab">
         <div id="parents"></div>
@@ -111,18 +125,6 @@
       </div>
 
       <div id="tab-preview" class="tab" hidden>
-        <div class="preview-bar">
-          <label class="check"><input type="checkbox" id="replaceHuman"> Replace text a person wrote</label>
-          <label class="check"><input type="checkbox" id="overrideCredits"> Replace existing credits with the brief's</label>
-          <label class="check"><input type="checkbox" id="scopeAll"> All folders</label>
-          <select id="pvFilter" class="pv-filter" title="Which images to show">
-            <option value="all">All images</option>
-            <option value="unsaved">Unsaved only</option>
-          </select>
-          <span class="spacer"></span>
-          <span id="selCount" class="muted"></span>
-          <button id="writeBtn">Write all</button>
-        </div>
         <div id="lastRun" class="note" hidden></div>
         <div id="previewList"></div>
       </div>
