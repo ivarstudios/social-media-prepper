@@ -1,3 +1,5 @@
+import json
+
 from smp import config, machine
 
 
@@ -46,3 +48,37 @@ def test_density_setting(data_dir):
     assert config.stored() == {"density": "tight"}
     config.save({"density": "comfortable"})                 # back to the default: nothing stored
     assert config.stored() == {}
+
+
+def test_folders_default(data_dir, monkeypatch):
+    config.LOCATIONS_FILE.unlink()
+    assert config.tools_dir() == config.APP_DIR / "tools"
+    assert config.load()["ollama_models_dir"] == str(data_dir / "ollama-models")    # models live in the data folder
+    monkeypatch.delenv("SMP_DATA_DIR")
+    monkeypatch.setenv("LOCALAPPDATA", str(data_dir.parent / "local"))
+    assert config.data_dir() == data_dir.parent / "local" / "IVAR-SMP"
+
+
+def test_folders_chosen_when_installing(data_dir, tmp_path, monkeypatch):
+    monkeypatch.delenv("SMP_DATA_DIR")
+    tools, models, data = tmp_path / "tools", tmp_path / "models", tmp_path / "data"
+    (tools / "exiftool").mkdir(parents=True)
+    exe = tools / "exiftool" / ("exiftool.exe" if machine.IS_WINDOWS else "exiftool")
+    exe.write_text("")
+    # the installer writes it from PowerShell 5.1, which may add a BOM
+    config.LOCATIONS_FILE.write_text(json.dumps({"tools": str(tools), "data": str(data)}), encoding="utf-8-sig")
+    assert config.data_dir() == data and config.load()["ollama_models_dir"] == str(data / "ollama-models")
+    assert machine.find_exiftool() == str(exe)
+    config.LOCATIONS_FILE.write_text(json.dumps({"models": str(models), "port": 1}), encoding="utf-8")
+    assert config.locations() == {"models": str(models)}                          # only the three folders
+    assert config.load()["ollama_models_dir"] == str(models)
+    config.LOCATIONS_FILE.write_text("not json", encoding="utf-8")
+    assert config.locations() == {}
+
+
+def test_models_folder_is_no_longer_a_setting(data_dir):
+    config.save({"ollama_models_dir": "D:/elsewhere"})
+    assert "ollama_models_dir" not in config.stored()
+    # set in Settings by an earlier version: still used until the installer records a models folder
+    config.settings_path().write_text(json.dumps({"ollama_models_dir": "D:/old"}), encoding="utf-8")
+    assert config.load()["ollama_models_dir"] == "D:/old"

@@ -85,6 +85,7 @@ def test_status_and_setup(client, monkeypatch):
     s = c.get("/api/status").json()
     assert {"gpu", "recommended", "ollama", "ready", "exiftool"} <= set(s)
     assert s["exiftool"] and s["ollama"]["model"]
+    assert s["folders"]["models"].endswith("ollama-models") and s["folders"]["tools"] and s["folders"]["data"]
     c.post("/api/claude-key", json={"key": "sk-ant-test"})
     assert c.get("/api/status").json()["claude_key_saved"]
     settings = c.get("/api/settings").json()

@@ -1,7 +1,11 @@
-"""Settings (per user, per PC) and the data folder.
+"""Settings (per user, per PC) and the folders SMP uses.
 
 settings.json holds only what the user chose. Anything left empty (tool paths, the local model, the Ollama address)
-is worked out on every start, so a later install or a bigger GPU is picked up without editing settings."""
+is worked out on every start, so a later install or a bigger GPU is picked up without editing settings.
+
+The folders are chosen when installing and kept in locations.json in the app folder (the data folder can't hold
+the record of where the data folder is): tools (uv, Python, ExifTool, Ollama), models and data. A folder that
+isn't in it is the default: <app>/tools, <data>/ollama-models and %LOCALAPPDATA%/IVAR-SMP."""
 
 from __future__ import annotations
 
@@ -11,14 +15,36 @@ from pathlib import Path
 
 APP_NAME = "IVAR-SMP"
 PKG_DIR = Path(__file__).resolve().parent
+APP_DIR = PKG_DIR.parent
+LOCATIONS_FILE = APP_DIR / "locations.json"
+LOCATION_KEYS = ("tools", "models", "data")
+
+
+def locations() -> dict:
+    """The folders chosen when installing; a missing one is the default."""
+    try:
+        d = json.loads(LOCATIONS_FILE.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return {}
+    return {k: v for k, v in d.items() if k in LOCATION_KEYS and isinstance(v, str) and v} if isinstance(d, dict) \
+        else {}
+
+
+def tools_dir() -> Path:
+    return Path(locations().get("tools") or APP_DIR / "tools")
 
 
 def data_dir() -> Path:
-    base = os.environ.get("SMP_DATA_DIR") or os.path.join(
+    base = os.environ.get("SMP_DATA_DIR") or locations().get("data") or os.path.join(
         os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share"), APP_NAME)
     p = Path(base)
     p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def models_dir() -> str:
+    # before locations.json, the models folder was a setting
+    return locations().get("models") or stored().get("ollama_models_dir") or str(data_dir() / "ollama-models")
 
 
 DEFAULTS: dict = {
@@ -33,7 +59,6 @@ DEFAULTS: dict = {
     "ollama_url": "",              # empty: SMP's own Ollama on port 11436 (started when needed)
     "ollama_model": "",            # empty: the best model for this GPU
     "ollama_exe": "",              # empty: tools/ollama, then PATH
-    "ollama_models_dir": "",       # empty: <data folder>/ollama-models
     "ollama_image_px": 1024,
     "claude_model": "claude-opus-5-5",
     "claude_effort": "medium",
@@ -66,7 +91,7 @@ def load() -> dict:
     s.update({k: v for k, v in stored().items() if k in DEFAULTS})
     s["exiftool"] = s["exiftool"] or machine.find_exiftool()
     s["ollama_exe"] = s["ollama_exe"] or machine.find_ollama()
-    s["ollama_models_dir"] = s["ollama_models_dir"] or str(data_dir() / "ollama-models")
+    s["ollama_models_dir"] = models_dir()
     s["ollama_url"] = s["ollama_url"] or f"http://127.0.0.1:{OWN_OLLAMA_PORT}"
     return s
 

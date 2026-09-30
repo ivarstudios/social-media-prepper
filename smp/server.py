@@ -214,6 +214,8 @@ def create_app() -> FastAPI:
                "claude_key": bool(s.get("claude_api_key") or os.environ.get("ANTHROPIC_API_KEY")
                                   or os.environ.get("ANTHROPIC_AUTH_TOKEN")),
                "claude_key_saved": bool(s.get("claude_api_key")),
+               "folders": {"tools": str(config.tools_dir()), "models": s["ollama_models_dir"],
+                           "data": str(config.data_dir())},
                "pull": dict(PULL)}
         try:
             out["exiftool"] = ExifTool(s["exiftool"]).version()

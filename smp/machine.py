@@ -1,6 +1,6 @@
 """This computer: GPU memory, which local vision model fits it, and where ExifTool and Ollama are.
 
-Tools come from the installer's own copies in tools/ first, then from PATH. Models are chosen from the GPU's
+Tools come from the installer's own copies in the tools folder first, then from PATH. Models are chosen from the GPU's
 memory (on Apple Silicon: a share of the unified memory)."""
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
-REPO_DIR = Path(__file__).resolve().parent.parent
-TOOLS_DIR = REPO_DIR / "tools"
+from smp import config
+
 IS_WINDOWS = os.name == "nt"
 
 
@@ -105,15 +105,16 @@ def installed_models(models_dir: str) -> list[str]:
 
 
 def find_exiftool() -> str:
-    for cand in (TOOLS_DIR / "exiftool" / ("exiftool.exe" if IS_WINDOWS else "exiftool"),
-                 TOOLS_DIR / "exiftool" / "Image-ExifTool" / "exiftool"):
+    tools = config.tools_dir()
+    for cand in (tools / "exiftool" / ("exiftool.exe" if IS_WINDOWS else "exiftool"),
+                 tools / "exiftool" / "Image-ExifTool" / "exiftool"):
         if cand.exists():
             return str(cand)
     return shutil.which("exiftool") or ""
 
 
 def find_ollama() -> str:
-    cand = TOOLS_DIR / "ollama" / ("ollama.exe" if IS_WINDOWS else "ollama")
+    cand = config.tools_dir() / "ollama" / ("ollama.exe" if IS_WINDOWS else "ollama")
     if cand.exists():
         return str(cand)
     found = shutil.which("ollama")

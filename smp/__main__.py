@@ -79,6 +79,9 @@ def doctor() -> int:
               "the better choice here")
     key = bool(s.get("claude_api_key") or os.environ.get("ANTHROPIC_API_KEY"))
     print(f"  Claude API    {'key found' if key else 'no key (optional; add one in Setup)'}")
+    print(f"  Programs      {config.tools_dir()}")
+    print(f"  Models        {s['ollama_models_dir']}")
+    print(f"  Data          {config.data_dir()}")
     return 1 if problems else 0
 
 
