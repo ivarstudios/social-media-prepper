@@ -209,6 +209,15 @@ def create_app() -> FastAPI:
     app = FastAPI(title="IVAR SMP", version=__version__)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
+    @app.middleware("http")
+    async def fresh_page(request, call_next):
+        # the browser checks back every time (a cheap 304 when nothing changed), so after an update the page never
+        # runs an old app.js against the new index.html
+        response = await call_next(request)
+        if request.url.path == "/" or request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html")

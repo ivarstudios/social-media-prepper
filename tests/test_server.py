@@ -175,6 +175,12 @@ def test_scan_again_reads_only_that_folder(client, tmp_path):
     assert c.post("/api/rescan", json={"folder": str(tmp_path)}).status_code == 400
 
 
+def test_page_is_never_served_stale(client):
+    c, _ = client
+    for url in ("/", "/static/app.js", "/static/app.css"):
+        assert c.get(url).headers["cache-control"] == "no-cache"
+
+
 def test_fix_a_detail_after_writing(client, tmp_path):
     c, _ = client
     d = tmp_path / "Set"
