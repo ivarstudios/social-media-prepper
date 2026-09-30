@@ -6,3 +6,4 @@ tools/
 install.log
 cleanup/
 locations.json
+/data/
