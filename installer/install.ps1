@@ -5,11 +5,12 @@
   It asks where three things go, keeps the answers in locations.json in this folder, and moves what's already there
   when a folder changes (run it again to change one):
     Programs  uv, Python, ExifTool, Ollama (about 2 GB)          default: tools\ in this folder
-    Models    the vision models (6 to 36 GB each)                default: <data folder>\ollama-models
-    Data      settings, answer cache, thumbnails, place names    default: %LOCALAPPDATA%\IVAR-SMP
+    Models    the vision models (6 to 36 GB each)                default: data\ollama-models in this folder
+    Data      settings, answer cache, thumbnails, place names    default: data\ in this folder
               and the undo record
-  The app and its Python environment (.venv) stay in this folder. Apart from the shortcuts, nothing goes anywhere
-  else: uv, Python, the package cache and the downloads all stay in the programs folder.
+  So by default everything stays in this folder. The app and its Python environment (.venv) always do. Apart from
+  the shortcuts, nothing goes anywhere else: uv, Python, the package cache and the downloads all stay in the programs
+  folder. uninstall.bat removes all of it.
 
   Options (pass to install.bat):
     -Yes              no questions: keep the folders (or use the ones given below) and accept all defaults
@@ -35,9 +36,7 @@ $ProgressPreference = "SilentlyContinue"
 
 $Repo = Split-Path -Parent $PSScriptRoot
 $LogFile = Join-Path $Repo "install.log"
-$LocationsFile = Join-Path $Repo "locations.json"
-$DefaultTools = Join-Path $Repo "tools"
-$DefaultData = Join-Path $env:LOCALAPPDATA "IVAR-SMP"
+. (Join-Path $PSScriptRoot "common.ps1")
 
 # ---- pinned versions (the tested builds) ---------------------------------------------------------------------------
 $UvVersion = "0.12.18"
@@ -47,23 +46,6 @@ $ExifToolSha256 = "44b512b25af500724ba579d0a53c8fc5851628b692dd5e5d94ae4a15c2cba
 $OllamaVersion = "0.34.4"
 $OllamaUrl = "https://github.com/ollama/ollama/releases/download/v$OllamaVersion/ollama-windows-amd64.zip"
 $OllamaSha256 = "535193f38f3344e5b08f5d1c171c31ce11aa17f0124ff69ae26d8ec7fe06fa62"
-
-$script:Warnings = New-Object System.Collections.ArrayList
-
-function Log([string]$msg) {
-    $line = "{0}  {1}" -f (Get-Date -Format "yyyy-MM-dd HH:mm:ss"), $msg
-    for ($i = 0; $i -lt 5; $i++) {
-        try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction Stop; return } catch { Start-Sleep -Milliseconds 200 }
-    }
-}
-function Step([string]$msg) { Write-Host ""; Write-Host "==> $msg" -ForegroundColor Cyan; Log "STEP $msg" }
-function Info([string]$msg) { Write-Host "    $msg"; Log $msg }
-function Warn([string]$msg) { Write-Host "    WARNING: $msg" -ForegroundColor Yellow; Log "WARN $msg"; [void]$script:Warnings.Add($msg) }
-function Fail([string]$msg) {
-    Write-Host ""; Write-Host "ERROR: $msg" -ForegroundColor Red; Log "FAIL $msg"
-    Write-Host "Details are in $LogFile"
-    exit 1
-}
 
 function Invoke-Native {
     param([string]$Exe, [string[]]$Arguments, [switch]$AllowFail)
@@ -76,15 +58,6 @@ function Invoke-Native {
     } finally { $ErrorActionPreference = $old }
     if ($code -ne 0 -and -not $AllowFail) { throw ("{0} failed (exit code {1})" -f (Split-Path -Leaf $Exe), $code) }
     return $code
-}
-
-function AskYesNo([string]$question, [bool]$default) {
-    if ($Yes) { return $default }
-    $hint = "y/N"
-    if ($default) { $hint = "Y/n" }
-    $answer = Read-Host ("{0} [{1}]" -f $question, $hint)
-    if ([string]::IsNullOrWhiteSpace($answer)) { return $default }
-    return $answer.Trim().ToLower().StartsWith("y")
 }
 
 function Download([string]$Url, [string]$Dest) {
@@ -127,22 +100,6 @@ function Get-OllamaVersion([string]$exe) {
 }
 
 # ---- folders --------------------------------------------------------------------------------------------------------
-function Same([string]$a, [string]$b) { return [string]::Equals($a.TrimEnd('\'), $b.TrimEnd('\'), [StringComparison]::OrdinalIgnoreCase) }
-
-function Test-Inside([string]$path, [string]$folder) {
-    # $path is $folder itself or somewhere inside it
-    return ($path.TrimEnd('\') + '\').StartsWith($folder.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
-}
-
-function HasFiles([string]$path) {
-    return [bool]((Test-Path -LiteralPath $path) -and (Get-ChildItem -LiteralPath $path -Force -ErrorAction SilentlyContinue | Select-Object -First 1))
-}
-
-function Size([string]$path) {
-    $sum = (Get-ChildItem -LiteralPath $path -Recurse -File -Force -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
-    if ($sum -ge 1GB) { return "{0:N1} GB" -f ($sum / 1GB) } else { return "{0:N0} MB" -f ($sum / 1MB) }
-}
-
 function FreeSpace([string]$path) {
     try {
         $root = [IO.Path]::GetPathRoot($path)
@@ -244,29 +201,6 @@ function Move-Folder([string]$From, [string]$To, [string[]]$Keep) {
     if ((Test-Path -LiteralPath $From) -and -not (HasFiles $From)) { Remove-Item -Force -LiteralPath $From }
 }
 
-function Test-SmpRunning {
-    try {
-        return @(Get-CimInstance Win32_Process -Filter "Name = 'python.exe'" -ErrorAction Stop |
-                 Where-Object { $_.CommandLine -match '\s-m\s+smp(\s|$)' }).Count -gt 0
-    } catch { return $false }
-}
-
-function Stop-OwnOllama([string]$toolsDir) {
-    # SMP's own Ollama listens on port 11436, runs from the programs folder and keeps the models open
-    $ids = @()
-    try { $ids += @(Get-NetTCPConnection -LocalPort 11436 -State Listen -ErrorAction Stop | ForEach-Object { $_.OwningProcess }) } catch { }
-    $ids += @(Get-Process -Name ollama -ErrorAction SilentlyContinue |
-              Where-Object { $_.Path -and (Test-Inside $_.Path $toolsDir) } | ForEach-Object { $_.Id })
-    $stopped = $false
-    foreach ($id in @($ids | Select-Object -Unique)) {
-        $p = Get-Process -Id $id -ErrorAction SilentlyContinue
-        if ($p -and $p.ProcessName -like "ollama*") {
-            try { Stop-Process -Id $id -Force -ErrorAction Stop; $stopped = $true } catch { }
-        }
-    }
-    if ($stopped) { Info "Stopped SMP's Ollama (the app starts it again when needed)"; Start-Sleep -Seconds 1 }
-}
-
 function Get-VenvHome([string]$venv) {
     $cfg = Join-Path $venv "pyvenv.cfg"
     if (Test-Path -LiteralPath $cfg) {
@@ -324,24 +258,22 @@ $About = @{
 if ($ClaudeOnly) { $About.tools = "Programs: uv, Python and ExifTool (about 250 MB)" }
 
 # where things are now: the folders chosen last time, else the defaults
-$saved = @{}
-if (Test-Path -LiteralPath $LocationsFile) {
-    try {
-        $j = Get-Content -Raw -Encoding UTF8 -LiteralPath $LocationsFile | ConvertFrom-Json
-        foreach ($k in "tools", "models", "data") { if ($j.$k) { $saved[$k] = [string]$j.$k } }
-    } catch { Warn "Could not read locations.json ($_): using the default folders." }
+$saved = Get-SavedLocations
+$Old = Get-CurrentFolders $saved
+$Venv = Join-Path $Repo ".venv"
+$Py = Join-Path $Venv "Scripts\python.exe"
+$installedHere = (Test-Path $Py) -or (Test-Path -LiteralPath $LocationsFile)
+$dataNow = $Old.data
+if (-not $saved.data -and (Same $Old.data $LegacyData)) {
+    $dataNow = $DefaultData           # earlier versions kept the data in the user profile: suggest the app folder
+    if ($installedHere) { Info "SMP's data is in $LegacyData, where earlier versions kept it: it moves into the app folder." }
 }
-$Old = @{ tools = $DefaultTools; data = $DefaultData }
-if ($saved.tools) { $Old.tools = $saved.tools }
-if ($saved.data) { $Old.data = $saved.data }
-$Old.models = Join-Path $Old.data "ollama-models"
-if ($saved.models) { $Old.models = $saved.models }
 
 Info "The app and its Python environment (.venv) stay in $Repo"
 if (-not $Yes) { Info "For each folder, press Enter to keep it or type (or paste) another one." }
 $New = @{}
 $New.tools = Choose-Folder "tools" $ToolsDir $Old.tools
-$New.data = Choose-Folder "data" $DataDir $Old.data
+$New.data = Choose-Folder "data" $DataDir $dataNow
 $modelsNow = Join-Path $New.data "ollama-models"         # by default the models live in the data folder
 if ($saved.models) { $modelsNow = $Old.models }
 if ($ClaudeOnly -and -not $ModelsDir) {
@@ -350,11 +282,9 @@ if ($ClaudeOnly -and -not $ModelsDir) {
     $New.models = Choose-Folder "models" $ModelsDir $modelsNow
 }
 
-$Venv = Join-Path $Repo ".venv"
-$Py = Join-Path $Venv "Scripts\python.exe"
 $venvStale = (Test-Path $Py) -and -not (Test-Inside (Get-VenvHome $Venv) (Join-Path $New.tools "python"))
 $moves = @("models", "tools", "data" | Where-Object { -not (Same $Old[$_] $New[$_]) -and (HasFiles $Old[$_]) })
-if ($moves.Count -gt 0 -and -not ((Test-Path $Py) -or (Test-Path -LiteralPath $LocationsFile))) {
+if ($moves.Count -gt 0 -and -not $installedHere) {
     # a first install: the default folders may belong to another copy of SMP on this PC, which still uses them
     foreach ($k in $moves) { Info "Left $($Old[$k]) as it is: it may belong to another copy of SMP" }
     $moves = @()

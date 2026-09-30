@@ -5,7 +5,7 @@ is worked out on every start, so a later install or a bigger GPU is picked up wi
 
 The folders are chosen when installing and kept in locations.json in the app folder (the data folder can't hold
 the record of where the data folder is): tools (uv, Python, ExifTool, Ollama), models and data. A folder that
-isn't in it is the default: <app>/tools, <data>/ollama-models and %LOCALAPPDATA%/IVAR-SMP."""
+isn't in it is the default, all inside the app folder: <app>/tools, <app>/data and <data>/ollama-models."""
 
 from __future__ import annotations
 
@@ -34,10 +34,17 @@ def tools_dir() -> Path:
     return Path(locations().get("tools") or APP_DIR / "tools")
 
 
+def legacy_data_dir() -> Path:
+    """Where versions before 0.1.2 kept the data: in the user profile, shared by every copy of SMP."""
+    return Path(os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share")) / APP_NAME
+
+
 def data_dir() -> Path:
-    base = os.environ.get("SMP_DATA_DIR") or locations().get("data") or os.path.join(
-        os.environ.get("LOCALAPPDATA") or os.path.expanduser("~/.local/share"), APP_NAME)
-    p = Path(base)
+    chosen = os.environ.get("SMP_DATA_DIR") or locations().get("data")
+    p = Path(chosen or APP_DIR / "data")
+    old = legacy_data_dir()
+    if not chosen and not p.exists() and old.is_dir() and any(old.iterdir()):
+        p = old           # not moved yet: the installer moves it into the app folder
     p.mkdir(parents=True, exist_ok=True)
     return p
 

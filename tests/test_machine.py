@@ -50,13 +50,27 @@ def test_density_setting(data_dir):
     assert config.stored() == {}
 
 
-def test_folders_default(data_dir, monkeypatch):
+def test_folders_default_to_the_app_folder(data_dir, tmp_path, monkeypatch):
     config.LOCATIONS_FILE.unlink()
     assert config.tools_dir() == config.APP_DIR / "tools"
     assert config.load()["ollama_models_dir"] == str(data_dir / "ollama-models")    # models live in the data folder
     monkeypatch.delenv("SMP_DATA_DIR")
-    monkeypatch.setenv("LOCALAPPDATA", str(data_dir.parent / "local"))
-    assert config.data_dir() == data_dir.parent / "local" / "IVAR-SMP"
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setattr(config, "APP_DIR", tmp_path / "app")
+    assert config.data_dir() == tmp_path / "app" / "data"
+    assert config.load()["ollama_models_dir"] == str(tmp_path / "app" / "data" / "ollama-models")
+
+
+def test_data_in_the_old_place_is_used_until_the_installer_moves_it(data_dir, tmp_path, monkeypatch):
+    config.LOCATIONS_FILE.unlink()
+    monkeypatch.delenv("SMP_DATA_DIR")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local"))
+    monkeypatch.setattr(config, "APP_DIR", tmp_path / "app")
+    old = tmp_path / "local" / "IVAR-SMP"
+    (old / "ollama-models").mkdir(parents=True)
+    assert config.data_dir() == old                          # before 0.1.2 the data lived in the user profile
+    (tmp_path / "app" / "data").mkdir(parents=True)          # moved (or a fresh install): the app folder wins
+    assert config.data_dir() == tmp_path / "app" / "data"
 
 
 def test_folders_chosen_when_installing(data_dir, tmp_path, monkeypatch):

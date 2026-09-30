@@ -26,13 +26,14 @@ console window or `.bat` in sight.
 - **Inno Setup** (free): `IVAR-SMP-Setup.exe`.
 - Per-user install into `%LOCALAPPDATA%\Programs\IVAR SMP`, so no admin rights are needed.
 - Start menu and optional desktop shortcut with `smp-icon.ico`, and a normal uninstaller.
-- The uninstaller leaves `%LOCALAPPDATA%\IVAR-SMP` (settings, downloaded models) unless the user ticks
-  "also remove downloaded models and settings".
+- It asks for the same three folders as `install.bat` (programs, models, data; by default inside the install
+  folder) and writes `locations.json`. The uninstaller does what `uninstall.bat` does, but keeps the models and data
+  unless the user ticks "also remove downloaded models and settings".
 
 ### 3. Ollama and the model stay out of the installer
 Ollama is 1–2 GB and only useful with a suitable GPU, so it isn't bundled. The in-app **Setup** panel gets a
 *Download Ollama* step next to *Download model*: the same pinned version and SHA-256 check as `install.ps1`,
-installed into the data folder. Claude-only users never download it.
+installed into the programs folder. Claude-only users never download it.
 
 ### 4. Signing
 - **Unsigned** (fine for a beta): Windows SmartScreen shows "Windows protected your PC" on first run;

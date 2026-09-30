@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # IVAR SMP installer for macOS and Linux. Run ./install.sh (start.sh runs it on first use). Safe to re-run.
-# It asks where the programs (uv, Python), the vision models and SMP's data go, keeps the answers in locations.json
-# in the app folder, and moves what's already there when a folder changes. ExifTool and Ollama come from Homebrew
-# or the system, which keep them in their own folders.
+# It asks where the programs (uv, Python), the vision models and SMP's data go (by default all inside the app folder:
+# tools/, data/ and data/ollama-models), keeps the answers in locations.json in the app folder, and moves what's
+# already there when a folder changes. ExifTool and Ollama come from Homebrew or the system, which keep them in their
+# own folders.
 # Options: --yes (no questions)  --claude-only (no local model; use the Claude API)
 #          --tools-dir DIR  --models-dir DIR  --data-dir DIR (the folders, without asking)
 set -euo pipefail
@@ -10,7 +11,8 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOCATIONS="$REPO/locations.json"
 DEFAULT_TOOLS="$REPO/tools"
-DEFAULT_DATA="$HOME/.local/share/IVAR-SMP"
+DEFAULT_DATA="$REPO/data"
+LEGACY_DATA="$HOME/.local/share/IVAR-SMP"   # where versions before 0.1.2 kept the data
 UV_VERSION="0.12.18"
 PYTHON_VERSION="3.12"
 YES=0
@@ -176,7 +178,15 @@ fi
 
 step "Choosing folders"
 OLD_tools="$(saved tools)"; OLD_tools="${OLD_tools:-$DEFAULT_TOOLS}"
-OLD_data="$(saved data)"; OLD_data="${OLD_data:-$DEFAULT_DATA}"
+SAVED_data="$(saved data)"
+OLD_data="${SAVED_data:-$DEFAULT_DATA}"
+DATA_NOW="$OLD_data"
+if [ -z "$SAVED_data" ] && [ ! -e "$DEFAULT_DATA" ] && has_files "$LEGACY_DATA"; then
+  OLD_data="$LEGACY_DATA"                  # earlier versions kept the data in the home folder
+  if [ -x "$REPO/.venv/bin/python" ]; then
+    info "SMP's data is in $LEGACY_DATA, where earlier versions kept it: it moves into the app folder."
+  fi
+fi
 SAVED_models="$(saved models)"
 OLD_models="${SAVED_models:-$OLD_data/ollama-models}"
 NEW_tools=""; NEW_models=""; NEW_data=""
@@ -185,7 +195,7 @@ info "The app and its Python environment (.venv) stay in $REPO"
 choose tools "$ARG_tools" "$OLD_tools" \
   "Programs: uv and Python (about 150 MB; ExifTool and Ollama come from Homebrew or the system)"
 NEW_tools="$CHOSEN"
-choose data "$ARG_data" "$OLD_data" \
+choose data "$ARG_data" "$DATA_NOW" \
   "Data: settings, answer cache, thumbnails, place names and the undo record (grows as SMP is used)"
 NEW_data="$CHOSEN"
 models_now="${SAVED_models:-$NEW_data/ollama-models}"   # by default the models live in the data folder
