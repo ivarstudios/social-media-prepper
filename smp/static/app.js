@@ -148,7 +148,7 @@ $("#settingsBtn").onclick = async () => {
     } else el.value = state.settings[el.name];
   }
   const folders = (await loadStatus())?.folders || {};
-  $("#folderList").innerHTML = FOLDERS.map(([k, label]) => `<dt>${label}</dt><dd><code>${esc(folders[k])}</code></dd>`).join("");
+  $("#locationList").innerHTML = FOLDERS.map(([k, label]) => `<dt>${label}</dt><dd><code>${esc(folders[k])}</code></dd>`).join("");
   $("#settingsDlg").showModal();
 };
 $("#settingsDlg").addEventListener("close", async () => {
