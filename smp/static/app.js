@@ -446,12 +446,12 @@ function streamInto(path, partial) {
 // Write button: orange with unwritten changes, green once the file matches what you see.
 const ACT = { new: "new", update: "update", replace: "replace", keep: "keep (person wrote)", fill: "fill",
   differs: "differs", remove: "remove", edited: "your edit" };
-const FIELD_LABELS = { title: "Title", caption: "Caption", alt_text: "Alt text", keywords: "Keywords", flags: "Flags",
+const FIELD_LABELS = { title: "Title", caption: "Caption", alt_text: "Alt text", keywords: "Keywords",
   place: "Place", city: "City", region: "Region", country: "Country", creator: "Creator", credit: "Credit line",
   copyright: "Copyright", usage: "Usage terms" };
-const MAIN_FIELDS = ["title", "caption", "alt_text", "keywords", "flags"];
+const MAIN_FIELDS = ["title", "caption", "alt_text", "keywords"];
 const MORE_FIELDS = ["place", "city", "region", "country", "creator", "credit", "copyright", "usage"];
-const LIST_FIELDS = ["keywords", "flags", "creator"];
+const LIST_FIELDS = ["keywords", "creator"];
 const LONG_FIELDS = ["caption", "alt_text", "keywords"];
 
 // Only the newest load is shown, and polling waits for it (state.previewReady), so an answer that arrives

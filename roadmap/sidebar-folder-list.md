@@ -36,5 +36,5 @@ With the local model `qwen3-vl:30b-a3b-instruct-q4_K_M`, on 10 photos:
   cut off, so that image failed with "unreadable answer". Ollama's `repeat_penalty` or a cap on the answer length
   (`num_predict`) would stop it.
 - **Needless warnings.** Two harmless photos got a content warning ("This image contains no people or animals.",
-  "natural landscapes ... suitable for general audiences"). The `content_warning` description in `vlm.py` could say to
-  leave it empty unless something is distressing or private.
+  "natural landscapes ... suitable for general audiences"). Gone: SMP no longer asks for content warnings or the
+  minors flag, and removes the Flags that earlier versions wrote.

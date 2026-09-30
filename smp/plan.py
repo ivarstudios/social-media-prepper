@@ -19,15 +19,15 @@ from smp.geo import NEAR_KM, Place
 
 # What SMP writes: only what matters when preparing images for social media.
 AI_TEXT = ["title", "caption", "alt_text"]
-CLASSIFY = ["flags"]                      # minors, content warning: what a posting assistant must know
 CREDITS = ["creator", "credit", "copyright", "usage"]
 LOCATION = ["place", "city", "region", "country", "country_code"]
 # The fields a person can see and edit for every image, in the order they're shown.
-EDITABLE = AI_TEXT + ["keywords"] + CLASSIFY + LOCATION[:4] + CREDITS
+EDITABLE = AI_TEXT + ["keywords"] + LOCATION[:4] + CREDITS
 # Written by earlier versions and no longer used: removed on the next write (only where SMP wrote them).
 OBSOLETE_SMP = ["season", "time_of_day", "shot_type", "crop_fit", "focal_point", "language"]   # XMP-smp only
-OBSOLETE_IF_OURS = ["extended_description", "source_type"]
-LABELS = {"title": "Title", "caption": "Caption", "alt_text": "Alt text", "keywords": "Keywords", "flags": "Flags",
+OBSOLETE_IF_OURS = ["extended_description", "source_type", "flags"]      # flags a person edited are kept
+LABELS = {"title": "Title", "caption": "Caption", "alt_text": "Alt text", "keywords": "Keywords",
+          "flags": "Flags (old)",
           "creator": "Creator", "credit": "Credit line", "copyright": "Copyright", "usage": "Usage terms",
           "place": "Place", "city": "City", "region": "Region", "country": "Country", "country_code": "Country code",
           "gps": "GPS position", "season": "Season (old)", "time_of_day": "Time of day (old)",
@@ -86,7 +86,7 @@ class Row:
     proposed: object
     action: str        # new | update | replace | keep | fill | differs | remove
     selected: bool
-    group: str         # text | keywords | classify | credits | location | gps | cleanup
+    group: str         # text | keywords | credits | location | gps | cleanup
 
 
 def _row(field, current, proposed, action, selected, group) -> Row:
@@ -94,11 +94,8 @@ def _row(field, current, proposed, action, selected, group) -> Row:
 
 
 def ai_values(ai: dict) -> dict:
-    flags = ["minors"] if ai.get("minors_visible") else []
-    if ai.get("content_warning"):
-        flags.append(f"warning:{ai['content_warning']}")
     return {"title": ai.get("title", ""), "caption": ai.get("caption", ""), "alt_text": ai.get("alt_text", ""),
-            "keywords": ai.get("keywords", []), "flags": flags}
+            "keywords": ai.get("keywords", [])}
 
 
 def propose(meta: dict, ai: dict | None, brief_meta: dict, place: Place | None, replace_human: bool = False,
@@ -122,9 +119,6 @@ def propose(meta: dict, ai: dict | None, brief_meta: dict, place: Place | None, 
         merged = human + [k for k in vals["keywords"] if k.lower() not in {h.lower() for h in human}]
         if [k.lower() for k in merged] != [k.lower() for k in cur]:
             rows.append(_row("keywords", cur, merged, "update" if cur else "new", True, "keywords"))
-        cur, new = field_value(meta, "flags"), vals["flags"]
-        if cur != new and (cur or new):
-            rows.append(_row("flags", cur, new, "remove" if not new else "update" if cur else "new", True, "classify"))
 
     # keywords doubled by SMP 0.1's list bug (or anyone else): offer the list once
     cur = field_value(meta, "keywords")
@@ -192,7 +186,7 @@ def changes_for(meta: dict, rows: list[dict], model: str, brief_digest: str) -> 
         elif name == "keywords":
             before = {k.lower() for k in field_value(meta, "keywords")} - {k.lower() for k in added}
             added = [] if edited else [k for k in as_list(value) if k.lower() not in before]
-        elif name in AI_TEXT or name in CLASSIFY:
+        elif name in AI_TEXT:
             if edited:
                 fps.pop(name, None)       # the person's words now: never overwritten by a later run
             else:

@@ -105,12 +105,11 @@ Only what matters when preparing images for social media:
 | Alt text | pasted into Instagram and LinkedIn | IPTC `AltTextAccessibility` | model: only what's visible |
 | Title | a short name to find it by | XMP `dc:title` (+ IPTC Object Name if present) | model |
 | Keywords | search, and the starting point for hashtags | XMP `dc:subject` (+ IPTC Keywords if present) | model; your own keywords are kept |
-| Flags | `minors` and `warning:…`, so a posting assistant never proposes them blindly | `XMP-smp:Flags` | model |
 | Place, city, region, country | location tag and captions | IPTC location fields | brief, else GPS looked up offline (GeoNames) |
 | Creator, credit, copyright, usage terms | credit lines; restricted sets | XMP/IPTC rights fields | brief (or Settings), never the model |
 
 *Remove GPS* in a brief strips the position from the files (wolf dens, camera traps, undisclosed caves). Fields
-that earlier versions wrote and SMP no longer uses (focal point, crops, season and so on) show up in the preview as
+that earlier versions wrote and SMP no longer uses (flags, focal point, crops, season and so on) show up in the preview as
 *remove*, but only where SMP wrote them.
 
 Rules the model follows: it never names people, never guesses ethnicity, religion, health or relationships,

@@ -4,7 +4,7 @@ from smp import plan
 from smp.geo import Place
 
 AI = {"title": "Kayaker on a lake", "caption": "A kayaker at dawn.", "alt_text": "A red kayak on still water.",
-      "keywords": ["kayak", "lake"], "minors_visible": True, "content_warning": ""}
+      "keywords": ["kayak", "lake"]}
 
 
 def rows_by_field(rows):
@@ -16,23 +16,23 @@ def smp_meta(**fields):
     fps = {k: plan.fingerprint(v) for k, v in fields.items()}
     meta = {"XMP-smp:Fingerprints": json.dumps(fps)}
     tags = {"title": "XMP-dc:Title", "caption": "XMP-dc:Description",
-            "extended_description": "XMP-iptcCore:ExtDescrAccessibility"}
+            "extended_description": "XMP-iptcCore:ExtDescrAccessibility", "flags": "XMP-smp:Flags"}
     meta.update({tags[k]: v for k, v in fields.items()})
     return meta
 
 
 def test_empty_file_gets_the_social_fields_only():
     r = rows_by_field(plan.propose({}, AI, {"language": "en"}, None))
-    assert set(r) == {"title", "caption", "alt_text", "keywords", "flags"}
+    assert set(r) == {"title", "caption", "alt_text", "keywords"}
     assert r["title"].action == "new" and r["title"].selected
     assert r["keywords"].proposed == ["kayak", "lake"]
-    assert r["flags"].proposed == ["minors"]
 
 
-def test_content_warning_flag():
-    r = rows_by_field(plan.propose({}, {**AI, "minors_visible": False, "content_warning": "human remains"}, {}, None))
-    assert r["flags"].proposed == ["warning:human remains"]
-    assert "flags" not in rows_by_field(plan.propose({}, {**AI, "minors_visible": False}, {}, None))
+def test_old_flags_are_removed_unless_a_person_edited_them():
+    r = rows_by_field(plan.propose(smp_meta(flags=["minors", "warning:human remains"]), AI, {}, None))
+    assert r["flags"].action == "remove" and r["flags"].group == "cleanup"
+    edited = {"XMP-smp:Fingerprints": "{}", "XMP-smp:Flags": ["minors"]}
+    assert "flags" not in rows_by_field(plan.propose(edited, AI, {}, None))
 
 
 def test_human_caption_is_kept_unless_replacing():

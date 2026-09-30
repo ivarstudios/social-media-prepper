@@ -24,8 +24,7 @@ def test_write_read_undo(tmp_path, exiftool_path, ext):
             {"field": "caption", "proposed": "Snow, wind and a hut."},
             {"field": "alt_text", "proposed": "A red hut in snow."},
             {"field": "keywords", "proposed": ["snow", "hut", "fjäll"]},
-            {"field": "creator", "proposed": ["José Muñoz"]},
-            {"field": "flags", "proposed": ["minors", "text"]}]
+            {"field": "creator", "proposed": ["José Muñoz"]}]
     res = plan.write(et, str(tmp_path), {str(p): {"meta": before, "rows": rows, "model": "m", "brief": "b"}})
     assert res["written"] == 1 and not res["errors"]
     after = read1(et, p)

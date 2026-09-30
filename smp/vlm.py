@@ -33,10 +33,6 @@ class ImageMetadata(BaseModel):
     alt_text: str = Field(min_length=1, description="Alt text for screen readers: what is visible, 1-2 sentences, "
                                                     "under 250 characters.")
     keywords: list[str] = Field(min_length=1, description="6-15 lowercase keywords.")
-    minors_visible: bool = Field(description="Children or young teenagers are visible.")
-    content_warning: str = Field(description="Short note if the image shows something distressing or private "
-                                             "(human remains, injury, grief, confidential work information), "
-                                             "otherwise an empty string.")
 
 
 SYSTEM = """You write metadata for a photographer's archive of finished images: photos, phone pictures, \
@@ -81,7 +77,7 @@ def clean(meta: dict) -> dict:
         return s.replace(" — ", ", ").replace("—", "-").replace(" – ", ", ").strip()
 
     out = dict(meta)
-    for k in ("title", "caption", "alt_text", "content_warning"):
+    for k in ("title", "caption", "alt_text"):
         out[k] = text(out.get(k))
     out["title"] = out["title"].rstrip(".")
     seen, kws = set(), []
@@ -91,8 +87,6 @@ def clean(meta: dict) -> dict:
             seen.add(k)
             kws.append(k)
     out["keywords"] = kws[:20]
-    if out["content_warning"].lower().strip(".") in ("none", "no", "n/a", "na", "nothing"):
-        out["content_warning"] = ""
     return out
 
 

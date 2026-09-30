@@ -23,17 +23,15 @@ def test_prompt_carries_brief_own_text_and_language():
 
 
 def test_clean_removes_em_dashes_and_tidies_keywords():
-    out = vlm.clean({"title": "A lake — at dawn.", "caption": "x", "alt_text": "y", "content_warning": "None.",
+    out = vlm.clean({"title": "A lake — at dawn.", "caption": "x", "alt_text": "y",
                      "keywords": ["Lake", "#lake", " dawn "]})
     assert out["title"] == "A lake, at dawn"
     assert out["keywords"] == ["lake", "dawn"]
-    assert out["content_warning"] == ""
 
 
 def test_schema_is_only_what_social_media_needs():
     schema = vlm.ImageMetadata.model_json_schema()
-    assert set(schema["properties"]) == {"title", "caption", "alt_text", "keywords", "minors_visible",
-                                         "content_warning"}
+    assert set(schema["properties"]) == {"title", "caption", "alt_text", "keywords"}
 
 
 def test_partial_fields_read_an_unfinished_answer():

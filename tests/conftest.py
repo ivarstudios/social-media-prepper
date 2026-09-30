@@ -48,7 +48,7 @@ class FakeBackend:
         self.answer = answer or {
             "title": "Kayaker on a calm lake", "caption": "A kayaker paddles across a calm lake at dawn.",
             "alt_text": "A person in a red kayak on still water with forested hills behind.",
-            "keywords": ["kayak", "lake", "dawn"], "minors_visible": False, "content_warning": ""}
+            "keywords": ["kayak", "lake", "dawn"]}
 
     def ensure(self):
         pass
