@@ -14,11 +14,24 @@ files: finished derivatives that can be exported again. RAW files, PSDs and vide
 ## Install
 
 **Windows 10/11:** download this repository (green *Code* button → *Download ZIP*, or `git clone`), unzip it
-somewhere permanent, and double-click **`start.bat`**. The first start installs everything into that folder, no
-admin rights needed:
+somewhere permanent, and double-click **`start.bat`**. The first start runs the installer, no admin rights needed.
+It asks where three things go. Press Enter to keep the suggested folder, and everything stays inside the app folder:
 
-- Python (through `uv`), ExifTool and Ollama, each a pinned version checked against its known checksum;
-- a desktop and Start menu shortcut, **IVAR SMP**.
+| Folder | What | Suggested |
+|---|---|---|
+| Programs | Python (through `uv`), ExifTool and Ollama, each a pinned version checked against its known checksum; about 2 GB | `tools\` in the app folder |
+| Models | the vision model, 6 to 36 GB | `data\ollama-models\` in the app folder |
+| Data | settings, answer cache, thumbnails, place names, undo record | `data\` in the app folder |
+
+Then it installs everything and adds a desktop and Start menu shortcut, **IVAR SMP**. To move a folder later, run
+`install.bat` again and type the new one: it moves what's there. Without questions:
+`install.bat -Yes -ModelsDir E:\IVAR-SMP\models` (also `-ToolsDir` and `-DataDir`). Versions before 0.1.2 kept the
+data in `%LOCALAPPDATA%\IVAR-SMP`; the next `install.bat` or `update.bat` moves it into the app folder.
+
+**Uninstall:** double-click **`uninstall.bat`**. It lists what it will remove, with sizes, and asks first. It
+removes the programs, models and data (wherever you put them), the Python environment and the shortcuts, then
+deletes the app folder too; a git clone keeps its code. It only removes SMP's own files: a folder you chose that
+also holds other files keeps them.
 
 Without an NVIDIA GPU with 8 GB or more, it asks whether to skip Ollama and use the Claude API instead.
 `install.bat -ClaudeOnly` does that directly. `update.bat` pulls the latest version (for a git clone) and repairs
@@ -113,10 +126,18 @@ a file are never changed.
 
 ## Where things live
 
-- **This folder:** the app, `tools\` (ExifTool, Ollama, uv), `.venv\` (Python). Delete the folder to uninstall
-  (and the shortcuts).
-- **`%LOCALAPPDATA%\IVAR-SMP`** (`~/.local/share/IVAR-SMP` on Mac/Linux): settings, the downloaded model,
-  the answer cache, thumbnails, place names and the undo record.
+By default, all of it is in the app folder:
+
+- **The app folder:** the app, `.venv\` (its Python environment) and, if you chose folders elsewhere,
+  `locations.json`, which records them.
+- **Programs** (`tools\`): uv, Python, ExifTool, Ollama, uv's package cache.
+- **Models** (`data\ollama-models\`): the downloaded vision models.
+- **Data** (`data\`): settings, the answer cache, thumbnails, place names and the undo record.
+
+*Settings → Folders* in the app and `python -m smp doctor` show where each one is. Nothing else is written outside
+these, apart from the shortcuts and the small key file Ollama keeps in `%USERPROFILE%\.ollama`. On a Mac or Linux,
+ExifTool and Ollama come from Homebrew or the system and stay where those put them; there's no uninstaller yet, so
+delete the app folder (and any folder you chose elsewhere).
 
 Answers are cached per image, brief and model, so re-running costs nothing and editing a brief redoes only that
 folder.

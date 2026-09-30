@@ -155,11 +155,14 @@
       <label>Local model (empty: best for this GPU)<input name="ollama_model"></label>
       <label>Ollama address<input name="ollama_url"></label>
       <label class="wide">Ollama program<input name="ollama_exe"></label>
-      <label class="wide">Models folder<input name="ollama_models_dir"></label>
       <label>Claude model<input name="claude_model"></label>
       <label>Claude effort<select name="claude_effort"><option>low</option><option>medium</option><option>high</option></select></label>
       <label class="wide">ExifTool<input name="exiftool"></label>
     </div>
+    <h4>Folders</h4>
+    <p class="muted">Chosen when installing. To change one, run install.bat (install.sh on Mac and Linux) again:
+      it moves what's there.</p>
+    <dl class="folders" id="folderList"></dl>
     <div class="actions"><button value="cancel" class="ghost">Cancel</button><button value="save">Save</button></div>
   </form>
 </dialog>

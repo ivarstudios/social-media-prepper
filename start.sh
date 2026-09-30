@@ -4,6 +4,6 @@ set -e
 cd "$(dirname "${BASH_SOURCE[0]}")"
 if [ ! -x .venv/bin/python ]; then
   echo "IVAR SMP isn't installed yet: running the installer first."
-  bash installer/install.sh --yes
+  bash installer/install.sh
 fi
 exec .venv/bin/python -m smp "$@"

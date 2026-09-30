@@ -78,7 +78,8 @@ function renderSetup(s) {
   if (!o.exe) model = `<div class="check-row bad">Ollama isn't installed. Run the installer again, or use the Claude API.</div>`;
   else if (o.ready) model = `<div class="check-row ok">Model <b>${esc(o.model)}</b> is downloaded and ready.</div>`;
   else model = `<div class="check-row">Model for this computer: <b>${esc(o.model)}</b>` +
-    (o.approx_gb ? `, about ${gb(o.approx_gb)} to download.` : ", not downloaded yet.") + `</div>`;
+    (o.approx_gb ? `, about ${gb(o.approx_gb)} to download` : ", not downloaded yet") +
+    ` into <code>${esc(s.folders.models)}</code>.</div>`;
   $("#suModel").innerHTML = model;
   const p = s.pull || {};
   $("#suPullBtn").hidden = !o.exe || o.ready;
@@ -118,7 +119,9 @@ $("#suKeyBtn").onclick = async () => {
 };
 
 // fields SMP works out by itself: empty unless the user typed something; the detected value is the placeholder
-const DETECTED = ["ollama_model", "ollama_url", "ollama_exe", "ollama_models_dir", "exiftool"];
+const DETECTED = ["ollama_model", "ollama_url", "ollama_exe", "exiftool"];
+const FOLDERS = [["tools", "Programs (uv, Python, ExifTool, Ollama)"], ["models", "Vision models"],
+                 ["data", "Settings, cache, thumbnails, place names, undo"]];
 
 const DENSITIES = ["comfortable", "medium", "tight"];
 function applyDensity(d) {
@@ -144,6 +147,8 @@ $("#settingsBtn").onclick = async () => {
       el.placeholder = el.name === "ollama_model" ? (state.status?.ollama?.model || "") : state.settings[el.name];
     } else el.value = state.settings[el.name];
   }
+  const folders = (await loadStatus())?.folders || {};
+  $("#folderList").innerHTML = FOLDERS.map(([k, label]) => `<dt>${label}</dt><dd><code>${esc(folders[k])}</code></dd>`).join("");
   $("#settingsDlg").showModal();
 };
 $("#settingsDlg").addEventListener("close", async () => {

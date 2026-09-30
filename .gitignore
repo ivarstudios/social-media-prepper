@@ -5,3 +5,5 @@ __pycache__/
 tools/
 install.log
 cleanup/
+locations.json
+/data/

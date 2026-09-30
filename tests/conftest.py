@@ -13,6 +13,9 @@ def data_dir(tmp_path, monkeypatch):
     """Every test gets its own settings, cache and undo database."""
     d = tmp_path / "smp-data"
     monkeypatch.setenv("SMP_DATA_DIR", str(d))
+    loc = tmp_path / "locations.json"                # this PC's tools, but none of its chosen data or models folders
+    loc.write_text(json.dumps({"tools": str(config.tools_dir())}), encoding="utf-8")
+    monkeypatch.setattr(config, "LOCATIONS_FILE", loc)
     store._conn = None
     yield d
     if store._conn is not None:
