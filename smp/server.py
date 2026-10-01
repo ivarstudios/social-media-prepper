@@ -81,7 +81,12 @@ class Session:
         counts: dict[Path, int] = {}
         for f in self.files.values():
             counts[f.path.parent] = counts.get(f.path.parent, 0) + 1
-        dirs = sorted(set(counts) | {self.root})
+        # Folders between the root and an image folder show too, even without images of their own: otherwise
+        # a nested folder is indented under whichever folder happens to come before it.
+        dirs = {self.root}
+        for d in counts:
+            dirs.update(p for p in [d, *d.parents] if p == self.root or self.root in p.parents)
+        dirs = sorted(dirs)
         defaults = defaults_from(config.load())
         out = []
         for d in dirs:

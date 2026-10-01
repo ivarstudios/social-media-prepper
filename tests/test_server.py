@@ -175,6 +175,16 @@ def test_scan_again_reads_only_that_folder(client, tmp_path):
     assert c.post("/api/rescan", json={"folder": str(tmp_path)}).status_code == 400
 
 
+def test_folder_without_images_still_shows_so_nesting_is_right(client, tmp_path):
+    c, _ = client
+    root = tmp_path / "Expeditions"
+    make_image(root / "2023 Seaside" / "a.jpg")
+    make_image(root / "2025 Mountains" / "Summit 2025" / "b.jpg")
+    r = c.post("/api/scan", json={"folder": str(root), "recursive": True}).json()
+    tree = [(f["depth"], f["rel"].split("/")[-1], f["images"]) for f in r["folders"]]
+    assert tree[1:] == [(1, "2023 Seaside", 1), (1, "2025 Mountains", 0), (2, "Summit 2025", 1)]
+
+
 def test_page_is_never_served_stale(client):
     c, _ = client
     for url in ("/", "/static/app.js", "/static/app.css"):
