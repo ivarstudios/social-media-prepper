@@ -207,14 +207,15 @@ function setFolders(r) {
   $$("#folderList li").forEach(li => li.onclick = () => selectFolder(li.dataset.p));
 }
 
-// Step dots: brief · generated · written. Green only when that step is complete for every image.
+// Step dots: brief · generated · written. Green only when that step is complete for every image; the brief dot
+// is half green when the folder only has a brief from a folder above, which still applies but says nothing of its own.
 function steps(f) {
   const n = f.images, briefOk = f.brief !== "missing" && !f.stale;
-  const brief = briefOk ? "on" : "warn";
+  const brief = !briefOk ? "warn" : f.brief === "own" ? "on" : "half";
   const gen = f.pending ? "blue" : n && f.written === n ? "on" : f.written ? "half" : "";
   const written = n && f.written === n ? "on" : f.written ? "half" : "";
   const title = [
-    { own: "Brief: this folder's own brief.md", inherited: "Brief: inherited from a folder above",
+    { own: "Brief: this folder's own brief.md", inherited: "Brief: only one from a folder above, none of its own yet",
       missing: "Brief: none yet (captions would describe only what's visible)" }[f.brief],
     f.stale ? `Brief changed since ${f.stale} image${f.stale === 1 ? " was" : "s were"} written: generate again` : "",
     n ? (f.pending ? `Generated: ${f.pending} waiting in Review & write, not written yet` :
