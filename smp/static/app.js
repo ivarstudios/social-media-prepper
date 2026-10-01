@@ -181,13 +181,65 @@ $("#scanForm").onsubmit = e => { e.preventDefault(); scan(); };
 async function scan() {
   const folder = $("#folder").value.trim();
   if (!folder) return;
+  const btn = $("#scanForm [type=submit]");
+  btn.disabled = true;
   $("#rootName").textContent = "Scanning...";
+  // the main window shows the scan as it goes: folders as they're found, then metadata being read
+  $("#empty").hidden = $("#work").hidden = true;
+  $("#scanPanel").hidden = false;
+  $("#scanRoot").textContent = folder.split(/[\\/]/).filter(Boolean).pop() || folder;
+  $("#scanFound").innerHTML = "";
+  renderScan({ phase: "listing", found_total: 0, images: 0 }, []);
+  const stop = watchScan(renderScan);
   try {
     const r = await api("/api/scan", { folder, recursive: $("#recursive").checked });
+    stop();
+    $("#scanPanel").hidden = true;
     setFolders(r);
     selectFolder(r.root);
     loadSettings();
-  } catch (e) { $("#rootName").textContent = "No folder scanned"; toast(e.message); }
+  } catch (e) {
+    stop();
+    $("#scanPanel").hidden = true;
+    toast(e.message);
+    if (state.root) { refreshFolders(); selectFolder(state.folder || state.root); }   // still the folder from before
+    else { $("#rootName").textContent = "No folder scanned"; $("#empty").hidden = false; }
+  }
+  btn.disabled = false;
+}
+
+// Asks how the scan is getting on until stop() is called; render(progress, folders found since last time).
+// Only a scan that's running counts: until this one has started, the server still describes the one before.
+function watchScan(render) {
+  let on = true, seen = 0, timer;
+  const tick = async () => {
+    try {
+      const p = await api(`/api/scan-progress?since=${seen}`);
+      if (on && p.running) { seen = p.found_total; render(p, p.found); }
+    } catch (_) {}
+    if (on) timer = setTimeout(tick, 250);
+  };
+  timer = setTimeout(tick, 150);
+  return () => { on = false; clearTimeout(timer); };
+}
+
+function renderScan(p, found) {
+  const looking = p.phase === "listing", n = x => (x || 0).toLocaleString();
+  $("#scanBar").classList.toggle("looking", looking);
+  $("#scanFill").style.width = looking ? "" : (p.total ? 100 * p.read / p.total : 100) + "%";
+  $("#scanPct").textContent = looking || !p.total ? "" : Math.floor(100 * p.read / p.total) + "%";
+  $("#scanText").textContent = looking
+    ? `Looking through folders · ${n(p.found_total)} folder${p.found_total === 1 ? "" : "s"} · ${n(p.images)} image${p.images === 1 ? "" : "s"} so far`
+    : `Reading metadata · ${n(p.read)} of ${n(p.total)} image${p.total === 1 ? "" : "s"}`;
+  const list = $("#scanFound");
+  const atEnd = list.scrollTop + list.clientHeight >= list.scrollHeight - 30;
+  list.insertAdjacentHTML("beforeend", found.map(f => `<li class="${f.images ? "" : "none"}" style="padding-left:${12 + f.depth * 14}px">
+    <span class="name" title="${esc(f.rel)}">${esc(f.rel.split("/").pop())}</span>
+    <span class="n">${f.images ? n(f.images) : "–"}</span></li>`).join(""));
+  $$("li.now", list).forEach(li => li.classList.remove("now"));
+  if (looking && list.lastElementChild) list.lastElementChild.classList.add("now");
+  if (atEnd) list.scrollTop = list.scrollHeight;
+  list.hidden = !list.children.length;
 }
 
 function setFolders(r) {
@@ -457,10 +509,13 @@ $("#rescanFolder").onclick = async () => {
   const btn = $("#rescanFolder"), folder = state.folder;
   btn.disabled = true;
   btn.textContent = "Scanning...";
+  const stop = watchScan(p => (btn.textContent = p.phase === "reading" && p.total ? `Reading ${p.read} / ${p.total}...` : "Scanning..."));
   try {
-    setFolders(await api("/api/rescan", { folder }));
+    const r = await api("/api/rescan", { folder });
+    stop();
+    setFolders(r);
     await selectFolder(state.folders.some(f => f.path === folder) ? folder : state.root);
-  } catch (e) { toast(e.message); }
+  } catch (e) { stop(); toast(e.message); }
   btn.disabled = state.jobRunning;
   btn.textContent = "Scan again";
 };

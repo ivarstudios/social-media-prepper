@@ -47,16 +47,26 @@ class ImageFile:
         return int(w or 0), int(h or 0)
 
 
-def list_images(folder: Path, recursive: bool) -> list[Path]:
+def is_image(p: Path) -> bool:
+    return p.suffix.lower() in WRITABLE_EXTS and not p.name.startswith(".")
+
+
+def list_images(folder: Path, recursive: bool, on_folder=None) -> list[Path]:
+    """on_folder(folder, images_in_it) is called for each folder as it's looked through, top down."""
     folder = Path(folder)
     if not recursive:
-        items = [p for p in folder.iterdir() if p.is_file()]
+        items = [p for p in folder.iterdir() if p.is_file() and is_image(p)]
+        if on_folder:
+            on_folder(folder, len(items))
     else:
         items = []
         for d, dirs, files in os.walk(folder):
             dirs[:] = sorted(x for x in dirs if not x.startswith((".", "__")))
-            items += [Path(d) / f for f in files]
-    return sorted(p for p in items if p.suffix.lower() in WRITABLE_EXTS and not p.name.startswith("."))
+            found = [Path(d) / f for f in files if is_image(Path(f))]
+            items += found
+            if on_folder:
+                on_folder(Path(d), len(found))
+    return sorted(items)
 
 
 def _open(path: Path, px: int) -> Image.Image:

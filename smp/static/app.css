@@ -89,6 +89,32 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .content { padding: var(--page-y) var(--page-x) 80px; max-width: var(--content-max); margin: 0 auto; }
 .empty { max-width: 620px; margin: 10vh auto; text-align: center; color: var(--muted); }
 .empty h1 { color: var(--ink); font-weight: 600; }
+/* scanning: looking through folders (the bar sweeps), then reading metadata (the bar fills, still moving) */
+.scan-panel { max-width: 720px; }
+.scan-panel h2 { margin: 0 0 var(--gap-s); font-weight: 600; overflow-wrap: anywhere; }
+.scan-progress { display: flex; align-items: center; gap: 12px; }
+.scan-bar { max-width: none; height: 8px; border-radius: 4px; }
+.scan-bar div { position: relative; overflow: hidden; }
+.scan-bar div::after { content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .45), transparent); animation: sweep 1.3s ease-in-out infinite; }
+.scan-bar.looking div { width: 30% !important; transition: none; animation: shuttle 1.4s ease-in-out infinite alternate; }
+.scan-bar.looking div::after { display: none; }
+@keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes shuttle { from { margin-left: 0; } to { margin-left: 70%; } }
+#scanPct { font-variant-numeric: tabular-nums; min-width: 40px; }
+#scanText { margin: 8px 0 var(--gap-s); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.scan-found { list-style: none; margin: 0; padding: 6px 0; max-height: 55vh; overflow: auto; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); font-size: 13px; }
+.scan-found li { display: flex; gap: 8px; padding: 2px 12px; animation: appear .25s ease-out; }
+.scan-found .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-found .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+.scan-found li.none { color: var(--muted); }
+.scan-found li.now { background: var(--upd); }
+@keyframes appear { from { opacity: 0; transform: translateY(3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .scan-bar div::after, .scan-found li { animation: none; }
+  .scan-bar.looking div { animation: none; width: 100% !important; opacity: .5; }
+}
 /* everything from the folder name down to Write all stays in view, just under the scan bar (--scan-h: app.js) */
 .work-head { position: sticky; top: var(--scan-h, 64px); z-index: 4; background: var(--bg); display: flow-root;
   margin-top: calc(-1 * var(--page-y)); padding-top: var(--page-y); margin-bottom: var(--gap); }

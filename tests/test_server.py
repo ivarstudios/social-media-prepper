@@ -257,3 +257,24 @@ def test_generate_for_ticked_folders_and_skip_done(client, tmp_path):
 
     c.post("/api/generate", json={"folders": ticked})                # everything ticked, again
     assert wait_job(c)["total"] == 3
+
+
+def test_scan_reports_progress_as_it_goes(client, tmp_path, monkeypatch):
+    c, _ = client
+    root = tmp_path / "Stills"
+    make_image(root / "Seaside" / "a.jpg")
+    make_image(root / "Seaside" / "b.jpg", color=(9, 9, 9))
+    make_image(root / "Mountains" / "Summit" / "t.jpg")
+    seen = []                                       # what the page would see, asked while metadata is read
+    real_read = server.ExifTool.read
+    monkeypatch.setattr(server.ExifTool, "read", lambda self, paths, on_progress=None, chunk_size=400: real_read(
+        self, paths, lambda n: (on_progress(n), seen.append(c.get("/api/scan-progress").json())), chunk_size=2))
+    c.post("/api/scan", json={"folder": str(root), "recursive": True})
+
+    assert [(s["phase"], s["running"], s["read"], s["total"]) for s in seen] == [("reading", True, 2, 3),
+                                                                                 ("reading", True, 3, 3)]
+    found = [(f["depth"], f["rel"].split("/")[-1], f["images"]) for f in seen[0]["found"]]
+    assert found == [(0, "Stills", 0), (1, "Mountains", 0), (2, "Summit", 1), (1, "Seaside", 2)]
+    assert seen[0]["images"] == 3
+    done = c.get("/api/scan-progress", params={"since": 3}).json()
+    assert not done["running"] and done["found_total"] == 4 and len(done["found"]) == 1

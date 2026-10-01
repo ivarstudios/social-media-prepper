@@ -34,16 +34,38 @@ class Session:
         # current: the image being described; partial: its text fields as they stream in;
         # finished: every image with an answer (or an error) so far, in order
         self.last_run: dict | None = None
+        self.scanning = {"running": False}          # see read_tree
 
     def exiftool(self) -> ExifTool:
         return ExifTool(config.load()["exiftool"])
+
+    def read_tree(self, folder: Path, recursive: bool, root: Path) -> tuple[list[Path], dict]:
+        """The images in folder and their metadata, keeping self.scanning up to date for /api/scan-progress.
+
+        scanning: phase "listing" (looking through folders: current, found so far) then "reading" (metadata:
+        read of total images)."""
+        sc = self.scanning = {"running": True, "phase": "listing", "root": str(folder), "current": "", "found": [],
+                              "images": 0, "read": 0, "total": 0}
+
+        def on_folder(d: Path, n: int):
+            r = rel(d, root)
+            sc["current"] = r
+            sc["found"].append({"rel": r, "depth": len(d.relative_to(root).parts), "images": n})
+            sc["images"] += n
+
+        try:
+            paths = images.list_images(folder, recursive, on_folder)
+            sc.update(phase="reading", current="", total=len(paths))
+            metas = self.exiftool().read([str(p) for p in paths], lambda n: sc.update(read=n)) if paths else {}
+            return paths, metas
+        finally:
+            sc["running"] = False
 
     def scan(self, folder: str, recursive: bool) -> None:
         root = Path(folder).expanduser().resolve()
         if not root.is_dir():
             raise HTTPException(400, f"Not a folder: {folder}")
-        paths = images.list_images(root, recursive)
-        metas = self.exiftool().read([str(p) for p in paths]) if paths else {}
+        paths, metas = self.read_tree(root, recursive, root)
         with self.lock:
             if self.root != root:
                 self.results = {}
@@ -56,8 +78,7 @@ class Session:
         d = Path(folder).expanduser().resolve()
         if not self.root or not (d == self.root or self.root in d.parents):
             raise HTTPException(400, f"Not in the scanned folder: {folder}")
-        paths = images.list_images(d, False) if d.is_dir() else []
-        metas = self.exiftool().read([str(p) for p in paths]) if paths else {}
+        paths, metas = self.read_tree(d, False, self.root) if d.is_dir() else ([], {})
         with self.lock:
             keep = {str(p) for p in paths}
             for p in [p for p, f in self.files.items() if f.path.parent == d]:
@@ -332,13 +353,25 @@ def create_app() -> FastAPI:
     def scan(body: dict = Body(...)):
         if S.job["running"]:
             raise HTTPException(409, "A job is running")
+        if S.scanning["running"]:
+            raise HTTPException(409, "Already scanning")
         S.scan(body["folder"], bool(body.get("recursive", True)))
         return {"root": str(S.root), "folders": S.folders(), "images": len(S.files)}
+
+    @app.get("/api/scan-progress")
+    def scan_progress(since: int = 0):
+        """How the scan that's running (or ran last) is getting on, while /api/scan is still working.
+        found: the folders looked through after the first `since` (the page has those already)."""
+        sc = dict(S.scanning)
+        found = sc.pop("found", [])
+        return {**sc, "found": found[since:], "found_total": len(found)}
 
     @app.post("/api/rescan")
     def rescan(body: dict = Body(...)):
         if S.job["running"]:
             raise HTTPException(409, "A job is running")
+        if S.scanning["running"]:
+            raise HTTPException(409, "Already scanning")
         S.rescan_folder(body["folder"])
         return {"root": str(S.root), "folders": S.folders(), "images": len(S.files)}
 

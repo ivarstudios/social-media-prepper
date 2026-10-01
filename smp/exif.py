@@ -10,12 +10,14 @@ import json
 import os
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
 from smp.config import PKG_DIR
 
 CONFIG_FILE = PKG_DIR / "smp.exiftool.config"
+READERS = min(4, os.cpu_count() or 1)          # exiftools reading metadata at once
 WRITABLE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic", ".heif", ".webp"}
 
 
@@ -111,19 +113,26 @@ class ExifTool:
         r = subprocess.run([self.exe, "-ver"], capture_output=True, text=True, timeout=30)
         return r.stdout.strip()
 
-    def read(self, paths: list[str]) -> dict[str, dict]:
-        """{path: {"Group:Tag": value}} for the managed tags, GPS and file facts."""
-        out: dict[str, dict] = {}
-        for i in range(0, len(paths), 400):
-            chunk = paths[i:i + 400]
+    def read(self, paths: list[str], on_progress=None, chunk_size: int = 100) -> dict[str, dict]:
+        """{path: {"Group:Tag": value}} for the managed tags, GPS and file facts.
+
+        Read in chunks by a few exiftools at once: faster for big folders, and on_progress(files_read_so_far)
+        is called after each chunk often enough to show."""
+        def read_chunk(chunk: list[str]) -> list[dict]:
             args = ["-j", "-n", "-G1", "-struct", "-charset", "utf8"] + [f"-{t}" for t in READ_TAGS] + chunk
-            r = self._run(args)
-            text = r.stdout.decode("utf-8", "replace").strip()
-            if not text:
-                continue
-            for row in json.loads(text):
-                src = row.pop("SourceFile")
-                out[os.path.normpath(src)] = row
+            text = self._run(args).stdout.decode("utf-8", "replace").strip()
+            return json.loads(text) if text else []
+
+        chunks = [paths[i:i + chunk_size] for i in range(0, len(paths), chunk_size)]
+        out: dict[str, dict] = {}
+        done = 0
+        with ThreadPoolExecutor(max_workers=min(READERS, len(chunks)) or 1) as pool:
+            for chunk, rows in zip(chunks, pool.map(read_chunk, chunks)):
+                for row in rows:
+                    out[os.path.normpath(row.pop("SourceFile"))] = row
+                done += len(chunk)
+                if on_progress:
+                    on_progress(done)
         return out
 
     def write(self, jobs: list[tuple[str, list[str]]]) -> dict[str, str]:
