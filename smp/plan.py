@@ -207,8 +207,9 @@ def managed_snapshot(meta: dict) -> dict:
     return {k: v for k, v in meta.items() if k in keep}
 
 
-def write(et: ExifTool, folder: str, plans: dict[str, dict]) -> dict:
-    """plans: {path: {"meta": current meta, "rows": ticked rows, "model": .., "brief": digest}}."""
+def write(et: ExifTool, folder: str, plans: dict[str, dict], on_progress=None) -> dict:
+    """plans: {path: {"meta": current meta, "rows": ticked rows, "model": .., "brief": digest}}.
+    on_progress(files_written_so_far) as ExifTool.write."""
     jobs = []
     for path, p in plans.items():
         args = changes_for(p["meta"], p["rows"], p.get("model", ""), p.get("brief", ""))
@@ -219,11 +220,11 @@ def write(et: ExifTool, folder: str, plans: dict[str, dict]) -> dict:
     run_id = store.start_run(folder, len(jobs))
     for path, _ in jobs:
         store.snapshot(run_id, path, managed_snapshot(plans[path]["meta"]))
-    errors = et.write(jobs)
+    errors = et.write(jobs, on_progress)
     return {"run_id": run_id, "written": len(jobs) - len(errors), "errors": errors}
 
 
-def undo(et: ExifTool, run_id: int) -> dict:
+def undo(et: ExifTool, run_id: int, on_progress=None) -> dict:
     snaps = store.snapshots(run_id)
     jobs = []
     for path, before in snaps.items():
@@ -243,7 +244,7 @@ def undo(et: ExifTool, run_id: int) -> dict:
                 args.append(f"-{tag}={as_text(v)}")
         args += restore_gps(before)
         jobs.append((path, args))
-    errors = et.write(jobs)
+    errors = et.write(jobs, on_progress)
     store.mark_undone(run_id)
     return {"restored": len(jobs) - len(errors), "errors": errors}
 

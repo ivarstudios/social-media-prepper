@@ -271,10 +271,37 @@ def test_scan_reports_progress_as_it_goes(client, tmp_path, monkeypatch):
         self, paths, lambda n: (on_progress(n), seen.append(c.get("/api/scan-progress").json())), chunk_size=2))
     c.post("/api/scan", json={"folder": str(root), "recursive": True})
 
-    assert [(s["phase"], s["running"], s["read"], s["total"]) for s in seen] == [("reading", True, 2, 3),
-                                                                                 ("reading", True, 3, 3)]
+    assert all(s["phase"] == "reading" and s["running"] and s["total"] == 3 for s in seen)
+    assert len(seen) == 2 and seen[0]["read"] in (1, 2) and seen[-1]["read"] == 3      # chunks of 2, in any order
     found = [(f["depth"], f["rel"].split("/")[-1], f["images"]) for f in seen[0]["found"]]
     assert found == [(0, "Stills", 0), (1, "Mountains", 0), (2, "Summit", 1), (1, "Seaside", 2)]
     assert seen[0]["images"] == 3
     done = c.get("/api/scan-progress", params={"since": 3}).json()
     assert not done["running"] and done["found_total"] == 4 and len(done["found"]) == 1
+
+
+def test_write_and_undo_report_progress(client, tmp_path, monkeypatch):
+    c, _ = client
+    d = tmp_path / "Set"
+    for k in range(5):
+        make_image(d / f"{k}.jpg", color=(k * 40, 0, 0))
+    (d / "brief.md").write_text("---\ncreator: Ada Lens\n---\nA test set.\n", encoding="utf-8")
+    c.post("/api/scan", json={"folder": str(d), "recursive": True})
+    seen = []                                       # what the page would see after each chunk of files
+    real_write = server.ExifTool.write
+    monkeypatch.setattr(server.ExifTool, "write", lambda self, jobs, on_progress=None, chunk_size=25: real_write(
+        self, jobs, lambda n: (on_progress(n), seen.append(c.get("/api/write-progress").json())), chunk_size=2))
+
+    prev = c.post("/api/preview", json={"folder": str(d)}).json()["images"]
+    items = [{"path": i["path"], "rows": [r for r in i["rows"] if r["selected"]]} for i in prev]
+    w = c.post("/api/write", json={"items": items}).json()
+    assert w["written"] == 5 and not w["errors"]
+    counts = [s["done"] for s in seen]                                     # chunks of 2, counted as they finish
+    assert all(s["phase"] == "writing" and s["total"] == 5 for s in seen)
+    assert len(counts) == 3 and counts == sorted(counts) and counts[-1] == 5
+    assert not c.get("/api/write-progress").json()["running"]
+
+    seen.clear()
+    assert c.post("/api/undo", json={"run_id": w["run_id"]}).json()["restored"] == 5
+    assert [s["phase"] for s in seen] == ["writing"] * 3 and seen[-1]["done"] == 5
+    assert all(not i["current"]["creator"] for i in c.post("/api/preview", json={"folder": str(d)}).json()["images"])

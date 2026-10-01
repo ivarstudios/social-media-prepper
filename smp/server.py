@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
@@ -35,6 +36,7 @@ class Session:
         # finished: every image with an answer (or an error) so far, in order
         self.last_run: dict | None = None
         self.scanning = {"running": False}          # see read_tree
+        self.writing = {"running": False}           # see writing_files
 
     def exiftool(self) -> ExifTool:
         return ExifTool(config.load()["exiftool"])
@@ -89,8 +91,27 @@ class Session:
                 self.files[str(p)] = images.ImageFile(p, metas.get(os.path.normpath(str(p)), {}))
             self.files = dict(sorted(self.files.items(), key=lambda kv: kv[1].path))
 
-    def refresh(self, paths: list[str]) -> None:
-        metas = self.exiftool().read(paths)
+    @contextmanager
+    def writing_files(self, total: int):
+        """Keeps self.writing up to date for /api/write-progress while files are written (or restored).
+        Yields step(phase): a progress callback for that phase, "checking" (reading what the files hold now),
+        "writing", then "reading" (what they hold after)."""
+        if self.writing["running"]:
+            raise HTTPException(409, "Already writing")
+        w = self.writing = {"running": True, "phase": "checking", "done": 0, "total": total}
+
+        def step(phase: str, of: int | None = None):
+            w.update(phase=phase, done=0, total=total if of is None else of)
+            return lambda n: w.update(done=n)
+
+        try:
+            yield step
+        finally:
+            w["running"] = False
+
+    def refresh(self, paths: list[str], on_progress=None) -> None:
+        # with progress to show: smaller chunks, so the count moves while a few hundred files are read
+        metas = self.exiftool().read(paths, on_progress, chunk_size=25 if on_progress else 100)
         with self.lock:
             for p in paths:
                 if p in self.files:
@@ -519,25 +540,35 @@ def create_app() -> FastAPI:
         paths = [i["path"] for i in items if i["path"] in S.files and i.get("rows")]
         if not paths:
             return {"written": 0, "errors": {}}
-        S.refresh(paths)                   # plan against what the files hold now
-        defaults = defaults_from(config.load())
-        plans = {}
-        for i in items:
-            p = i["path"]
-            if p not in paths:
-                continue
-            res = S.results.get(p, {})
-            plans[p] = {"meta": S.files[p].meta, "rows": i["rows"], "model": res.get("model", ""),
-                        "brief": res.get("brief") or brief.resolve(Path(p).parent, defaults).digest}
-        result = plan.write(S.exiftool(), str(S.root), plans)
-        S.refresh(paths)
+        with S.writing_files(len(paths)) as step:
+            S.refresh(paths, step("checking"))            # plan against what the files hold now
+            defaults = defaults_from(config.load())
+            plans = {}
+            for i in items:
+                p = i["path"]
+                if p not in paths:
+                    continue
+                res = S.results.get(p, {})
+                plans[p] = {"meta": S.files[p].meta, "rows": i["rows"], "model": res.get("model", ""),
+                            "brief": res.get("brief") or brief.resolve(Path(p).parent, defaults).digest}
+            result = plan.write(S.exiftool(), str(S.root), plans, step("writing"))
+            S.refresh(paths, step("reading"))
         S.last_run = result
         return result
 
+    @app.get("/api/write-progress")
+    def write_progress():
+        """How writing (or undoing) is getting on, while /api/write or /api/undo is still working."""
+        return S.writing
+
     @app.post("/api/undo")
     def undo(body: dict = Body(...)):
-        result = plan.undo(S.exiftool(), int(body["run_id"]))
-        S.refresh(list(S.files))
+        run_id = int(body["run_id"])
+        restored = list(store.snapshots(run_id))
+        with S.writing_files(len(restored)) as step:
+            result = plan.undo(S.exiftool(), run_id, step("writing"))
+            still_here = [p for p in restored if p in S.files]
+            S.refresh(still_here, step("reading", len(still_here)))
         return result
 
     @app.get("/api/runs")

@@ -10,14 +10,14 @@ import json
 import os
 import subprocess
 import tempfile
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
 from smp.config import PKG_DIR
 
 CONFIG_FILE = PKG_DIR / "smp.exiftool.config"
-READERS = min(4, os.cpu_count() or 1)          # exiftools reading metadata at once
+READERS = min(4, os.cpu_count() or 1)          # exiftools reading or writing metadata at once
 WRITABLE_EXTS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".heic", ".heif", ".webp"}
 
 
@@ -127,31 +127,44 @@ class ExifTool:
         out: dict[str, dict] = {}
         done = 0
         with ThreadPoolExecutor(max_workers=min(READERS, len(chunks)) or 1) as pool:
-            for chunk, rows in zip(chunks, pool.map(read_chunk, chunks)):
-                for row in rows:
+            running = {pool.submit(read_chunk, chunk): chunk for chunk in chunks}
+            for fut in as_completed(running):           # counted as each finishes, so the count moves steadily
+                for row in fut.result():
                     out[os.path.normpath(row.pop("SourceFile"))] = row
-                done += len(chunk)
+                done += len(running[fut])
                 if on_progress:
                     on_progress(done)
         return out
 
-    def write(self, jobs: list[tuple[str, list[str]]]) -> dict[str, str]:
-        """jobs: [(path, ["-TAG=value", ...])]. Returns {path: error} for files that failed ({} when all worked)."""
-        errors: dict[str, str] = {}
-        if not jobs:
+    def write(self, jobs: list[tuple[str, list[str]]], on_progress=None, chunk_size: int = 25) -> dict[str, str]:
+        """jobs: [(path, ["-TAG=value", ...])]. Returns {path: error} for files that failed ({} when all worked).
+
+        Written in chunks by a few exiftools at once (each file by one of them); on_progress(files_written_so_far)
+        is called after each chunk."""
+        def write_chunk(chunk: list[tuple[str, list[str]]]) -> dict[str, str]:
+            args: list[str] = []
+            for i, (path, assigns) in enumerate(chunk):
+                args += ["-overwrite_original", "-codedcharacterset=utf8", "-charset", "utf8",
+                         "-echo4", f"@@SMP {i}", *assigns, path, "-execute"]
+            err = self._run(args[:-1]).stderr.decode("utf-8", "replace")
+            errors, current = {}, None
+            for line in err.splitlines():
+                if line.startswith("@@SMP "):
+                    current = int(line.split()[1])
+                elif line.startswith("Error") and current is not None:
+                    errors[chunk[current][0]] = line.strip()
             return errors
-        args: list[str] = []
-        for i, (path, assigns) in enumerate(jobs):
-            args += ["-overwrite_original", "-codedcharacterset=utf8", "-charset", "utf8",
-                     "-echo4", f"@@SMP {i}", *assigns, path, "-execute"]
-        r = self._run(args[:-1])
-        err = r.stderr.decode("utf-8", "replace")
-        current = None
-        for line in err.splitlines():
-            if line.startswith("@@SMP "):
-                current = int(line.split()[1])
-            elif line.startswith("Error") and current is not None:
-                errors[jobs[current][0]] = line.strip()
+
+        chunks = [jobs[i:i + chunk_size] for i in range(0, len(jobs), chunk_size)]
+        errors: dict[str, str] = {}
+        done = 0
+        with ThreadPoolExecutor(max_workers=min(READERS, len(chunks)) or 1) as pool:
+            running = {pool.submit(write_chunk, chunk): chunk for chunk in chunks}
+            for fut in as_completed(running):
+                errors.update(fut.result())
+                done += len(running[fut])
+                if on_progress:
+                    on_progress(done)
         return errors
 
 

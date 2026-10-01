@@ -190,7 +190,7 @@ async function scan() {
   $("#scanRoot").textContent = folder.split(/[\\/]/).filter(Boolean).pop() || folder;
   $("#scanFound").innerHTML = "";
   renderScan({ phase: "listing", found_total: 0, images: 0 }, []);
-  const stop = watchScan(renderScan);
+  const stop = watchProgress("/api/scan-progress", renderScan);
   try {
     const r = await api("/api/scan", { folder, recursive: $("#recursive").checked });
     stop();
@@ -208,14 +208,14 @@ async function scan() {
   btn.disabled = false;
 }
 
-// Asks how the scan is getting on until stop() is called; render(progress, folders found since last time).
-// Only a scan that's running counts: until this one has started, the server still describes the one before.
-function watchScan(render) {
+// Asks how a scan or a write is getting on until stop() is called; render(progress, folders found since last
+// time). Only one that's running counts: until this one has started, the server still describes the one before.
+function watchProgress(url, render) {
   let on = true, seen = 0, timer;
   const tick = async () => {
     try {
-      const p = await api(`/api/scan-progress?since=${seen}`);
-      if (on && p.running) { seen = p.found_total; render(p, p.found); }
+      const p = await api(`${url}?since=${seen}`);
+      if (on && p.running) { seen = p.found_total || 0; render(p, p.found || []); }
     } catch (_) {}
     if (on) timer = setTimeout(tick, 250);
   };
@@ -512,7 +512,7 @@ $("#rescanFolder").onclick = async () => {
   const btn = $("#rescanFolder"), folder = state.folder;
   btn.disabled = true;
   btn.textContent = "Scanning...";
-  const stop = watchScan(p => (btn.textContent = p.phase === "reading" && p.total ? `Reading ${p.read} / ${p.total}...` : "Scanning..."));
+  const stop = watchProgress("/api/scan-progress", p => (btn.textContent = p.phase === "reading" && p.total ? `Reading ${p.read} / ${p.total}...` : "Scanning..."));
   try {
     const r = await api("/api/rescan", { folder });
     stop();
@@ -825,8 +825,10 @@ $("#writeBtn").onclick = async () => {
   const v = await ask("Write to files?", `${n} changes go into ${items.length} files. The old values are kept, so you can undo this.`, [["Cancel", "no", true], ["Write all", "yes"]]);
   if (v !== "yes") return;
   $("#writeBtn").disabled = true;
+  const done = showWriting(items.length, "Writing");
   try {
     const r = await api("/api/write", { items });
+    done();
     const errs = Object.keys(r.errors || {}).length;
     const box = $("#lastRun");
     box.hidden = false;
@@ -835,18 +837,35 @@ $("#writeBtn").onclick = async () => {
     if (r.run_id) toast(`Wrote ${r.written} files`, { label: "Undo", fn: () => undo(r.run_id) });
     await loadPreview();
     refreshFolders();
-  } catch (e) { toast(e.message); }
+  } catch (e) { done(); toast(e.message); }
   updateCount();
 };
 
+// The bar under Write all while files are written or restored: reading what they hold now, writing, reading back.
+const WRITE_STEPS = { checking: ["Checking", 0, .15], writing: [null, .15, .9], reading: ["Reading back", .9, 1] };
+function showWriting(total, verb) {
+  const n = x => (x || 0).toLocaleString(), files = t => `${n(t)} file${t === 1 ? "" : "s"}`;
+  $("#writeBar").hidden = false;
+  $("#writeFill").style.width = "2%";
+  $("#writeText").textContent = `${verb} ${total ? files(total) : "files"}...`;
+  const stop = watchProgress("/api/write-progress", p => {
+    const [label, from, to] = WRITE_STEPS[p.phase] || WRITE_STEPS.writing;
+    $("#writeFill").style.width = 100 * (from + (to - from) * (p.total ? p.done / p.total : 0)) + "%";
+    $("#writeText").textContent = `${label || verb} · ${n(p.done)} of ${files(p.total)}`;
+  });
+  return () => { stop(); $("#writeBar").hidden = true; };
+}
+
 async function undo(runId) {
+  const done = showWriting(0, "Restoring");
   try {
     const r = await api("/api/undo", { run_id: runId });
+    done();
     toast(`Restored ${r.restored} files`);
     $("#lastRun").hidden = true;
     loadPreview();
     refreshFolders();
-  } catch (e) { toast(e.message); }
+  } catch (e) { done(); toast(e.message); }
 }
 
 // ---- start --------------------------------------------------------------------------------------------------
