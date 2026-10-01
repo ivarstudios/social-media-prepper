@@ -207,6 +207,9 @@ dialog h4 { margin: 18px 0 8px; }
 .card.is-streaming { border-color: var(--info); box-shadow: 0 0 0 1px var(--info); }
 .rows textarea.streaming { background: var(--keep); resize: none; }
 .img-write.busy { background: var(--info); color: #fff; opacity: .9; }
+/* the brief's Save button: orange with unsaved changes, green for a moment after saving */
+#briefSave.dirty { background: var(--warn); color: #fff; }
+#briefSave.saved { background: var(--good); color: #fff; }
 .a-writing { color: var(--info); animation: pulse 1.2s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
 #jobText a { color: var(--accent); }

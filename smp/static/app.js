@@ -180,7 +180,7 @@ $("#scanForm").onsubmit = e => { e.preventDefault(); scan(); };
 
 async function scan() {
   const folder = $("#folder").value.trim();
-  if (!folder) return;
+  if (!folder || !(await briefChangesOk(true))) return;
   const btn = $("#scanForm [type=submit]");
   btn.disabled = true;
   $("#rootName").textContent = "Scanning...";
@@ -300,6 +300,7 @@ function renderTicks() {
 $("#tickClear").onclick = () => { state.ticked.clear(); saveTicks(); renderTicks(); };
 
 async function generateTicked() {
+  if (!(await briefChangesOk(false))) return;
   let scope = tickedFolders();
   const missing = scope.filter(f => f.brief === "missing");
   if (missing.length) {
@@ -356,6 +357,7 @@ function steps(f) {
 async function refreshFolders() { setFolders(await api("/api/folders")); }
 
 async function selectFolder(path) {
+  if (!(await briefChangesOk(true))) return false;
   state.folder = path;
   $$("#folderList li").forEach(li => li.classList.toggle("sel", li.dataset.p === path));
   const f = state.folders.find(x => x.path === path) || { images: 0, rel: path, brief: "missing" };
@@ -415,13 +417,47 @@ async function loadBrief() {
   else if (b.parents.length) { st.className = "note"; st.textContent = "No brief.md here: the brief above applies. Add details for this folder and save to create one."; }
   else { st.className = "note warn"; st.textContent = "No brief.md for this folder yet. Without one, captions describe only what's visible. Write a few sentences, or press Draft from photos."; }
   $("#briefMsg").textContent = "";
+  state.briefSaved = briefValues();
+  markBrief();
 }
 
-$("#briefForm").onsubmit = async e => {
+// Unsaved changes: the form differs from what was loaded or last saved
+function briefValues() {
+  return JSON.stringify([...$("#briefForm").elements].filter(el => el.name).map(el => el.type === "checkbox" ? el.checked : el.value));
+}
+const briefDirty = () => state.briefSaved !== undefined && briefValues() !== state.briefSaved;
+function markBrief() {
+  const btn = $("#briefSave"), dirty = briefDirty();
+  btn.classList.toggle("dirty", dirty);
+  if (dirty) { btn.classList.remove("saved"); btn.textContent = "Save brief.md"; }
+  btn.title = dirty ? "Unsaved changes: save (Ctrl+S)" : "Save (Ctrl+S)";
+}
+function flashSaved(text) {
+  const btn = $("#briefSave");
+  btn.classList.add("saved");
+  btn.textContent = text;
+  clearTimeout(btn._h);
+  btn._h = setTimeout(() => { btn.classList.remove("saved"); btn.textContent = "Save brief.md"; }, 1500);
+}
+$("#briefForm").addEventListener("input", markBrief);
+$("#briefForm").addEventListener("change", markBrief);
+
+// Ctrl+S (Cmd+S on a Mac) saves the brief while it's on screen; never the browser's own Save page dialog
+document.addEventListener("keydown", e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "s") return;
   e.preventDefault();
+  if ($("#work").hidden || $("#tab-brief").hidden) return;
+  if (briefDirty()) $("#briefForm").requestSubmit();
+  else flashSaved("Nothing to save");       // and no empty brief.md for a folder that has none
+});
+
+$("#briefForm").onsubmit = e => { e.preventDefault(); saveBrief(); };
+
+// true once saved
+async function saveBrief() {
   const meta = {};
   let body = "";
-  for (const el of e.target.elements) {
+  for (const el of $("#briefForm").elements) {
     if (!el.name) continue;
     if (el.name === "body") body = el.value;
     else if (el.type === "checkbox") meta[el.name] = el.checked;
@@ -429,11 +465,29 @@ $("#briefForm").onsubmit = async e => {
   }
   try {
     const r = await api("/api/brief", { folder: state.folder, meta, body });
-    $("#briefMsg").textContent = "Saved " + r.saved;
     await refreshFolders();
     await loadBrief();
-  } catch (err) { toast(err.message); }
-};
+    $("#briefMsg").textContent = "Saved " + r.saved;
+    flashSaved("Saved ✓");
+    return true;
+  } catch (err) { toast(err.message); return false; }
+}
+
+// Before anything that would lose unsaved brief changes (leaving: another folder, a new scan, Scan again) or
+// leave them out (generating reads the saved brief.md): save, go on without them, or cancel. True: go on.
+async function briefChangesOk(leaving) {
+  if (!briefDirty()) return true;
+  const name = (state.folders.find(f => f.path === state.folder)?.rel || state.folder).split("/").pop();
+  const v = await ask("Unsaved changes in the brief",
+    leaving ? `Your changes to the brief for ${name} aren't saved yet.`
+            : `Generating uses the saved brief.md, so your unsaved changes to the brief for ${name} would be left out.`,
+    [["Save", "save"], [leaving ? "Discard changes" : "Generate without them", "skip", true], ["Cancel", "", true]]);
+  if (!v) return false;
+  if (v === "save") return saveBrief();
+  if (leaving) state.briefSaved = undefined;
+  return true;
+}
+window.addEventListener("beforeunload", e => { if (briefDirty()) e.preventDefault(); });   // the browser asks
 
 $("#draftBtn").onclick = async () => {
   const btn = $("#draftBtn");
@@ -444,6 +498,7 @@ $("#draftBtn").onclick = async () => {
     const ta = $("#briefForm").elements.body;
     ta.value = (ta.value.trim() ? ta.value.trim() + "\n\n" : "") + r.body;
     $("#briefMsg").textContent = "Draft added. Check anything marked [check], then save.";
+    markBrief();
   } catch (e) { $("#briefMsg").textContent = ""; toast(e.message); }
   btn.disabled = false;
 };
@@ -470,6 +525,7 @@ function zoom(path) {
 
 // ---- generate -----------------------------------------------------------------------------------------------
 async function generate(all) {
+  if (!(await briefChangesOk(false))) return;
   const scope = all ? state.folders : state.folders.filter(f => f.path === state.folder);
   const missing = scope.filter(f => f.images && f.brief === "missing");
   if (missing.length) {
@@ -492,6 +548,7 @@ async function generate(all) {
 }
 // A card's Generate button: just that image, shown in place without leaving the list.
 async function generateOne(i) {
+  if (!(await briefChangesOk(false))) return;
   try {
     const path = state.preview[i].path;
     // the folder too: a server older than this page ignores paths, and then does only this folder, not everything
@@ -509,6 +566,7 @@ $("#genAll").onclick = () => generate(true);
 $("#stopBtn").onclick = () => api("/api/stop", {});
 
 $("#rescanFolder").onclick = async () => {
+  if (!(await briefChangesOk(true))) return;
   const btn = $("#rescanFolder"), folder = state.folder;
   btn.disabled = true;
   btn.textContent = "Scanning...";
