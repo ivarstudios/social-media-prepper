@@ -235,3 +235,25 @@ def test_generate_just_the_images_asked_for(client, tmp_path):
     rows = {i["path"]: i["rows"] for i in c.post("/api/preview", json={"folder": str(d)}).json()["images"]}
     assert any(r["field"] == "caption" for r in rows[str(a)])
     assert not any(r["field"] == "caption" for r in rows[str(d / "b.jpg")])
+
+
+def test_generate_for_ticked_folders_and_skip_done(client, tmp_path):
+    c, fake = client
+    root = tmp_path / "Stills"
+    a = make_image(root / "Seaside" / "a.jpg")
+    make_image(root / "Seaside" / "b.jpg", color=(9, 9, 9))
+    t = make_image(root / "Mountains" / "Summit" / "t.jpg")
+    make_image(root / "Misc" / "m.jpg")                              # not ticked
+    c.post("/api/scan", json={"folder": str(root), "recursive": True})
+    c.post("/api/generate", json={"paths": [str(a)]})                # a.jpg is done already
+    wait_job(c)
+    ticked = [str(root / "Seaside"), str(root / "Mountains" / "Summit")]
+
+    c.post("/api/generate", json={"folders": ticked, "skip_done": True})
+    j = wait_job(c)
+    assert sorted(j["finished"]) == sorted([str(root / "Seaside" / "b.jpg"), str(t)])
+    shown = {i["name"] for i in c.post("/api/preview", json={"folders": ticked}).json()["images"]}
+    assert shown == {"a.jpg", "b.jpg", "t.jpg"}
+
+    c.post("/api/generate", json={"folders": ticked})                # everything ticked, again
+    assert wait_job(c)["total"] == 3

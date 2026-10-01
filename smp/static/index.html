@@ -23,6 +23,12 @@
     <div class="side-head"><span id="rootName">No folder scanned</span><small id="rootCount"></small>
       <small class="legend-dots" title="Hover a folder's dots for details">Dots: brief · generated · written</small></div>
     <ul id="folderList" class="folders"></ul>
+    <div id="tickBar" class="tick-bar" hidden>
+      <div class="tick-links">
+        <button id="genTicked"></button>
+        <button id="tickClear" class="ghost" title="Untick all folders">Clear</button>
+      </div>
+    </div>
     <div class="side-foot">
       <label class="model-pick">Vision model
         <select id="backend">
@@ -80,7 +86,7 @@
       <div id="previewBar" class="preview-bar" hidden>
         <label class="check"><input type="checkbox" id="replaceHuman"> Replace text a person wrote</label>
         <label class="check"><input type="checkbox" id="overrideCredits"> Replace existing credits with the brief's</label>
-        <label class="check"><input type="checkbox" id="scopeAll"> All folders</label>
+        <label class="check"><input type="checkbox" id="scopeAll"> <span id="scopeLabel">All folders</span></label>
         <select id="pvFilter" class="pv-filter" title="Which images to show">
           <option value="all">All images</option>
           <option value="unsaved">Unsaved only</option>

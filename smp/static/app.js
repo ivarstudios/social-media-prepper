@@ -1,7 +1,7 @@
 // IVAR SMP front end: plain JS, no build step.
 const $ = (s, el = document) => el.querySelector(s);
 const $$ = (s, el = document) => [...el.querySelectorAll(s)];
-const state = { root: "", folders: [], folder: "", preview: [], settings: {}, pollTimer: null };
+const state = { root: "", folders: [], folder: "", preview: [], settings: {}, pollTimer: null, ticked: new Set() };
 
 async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
@@ -43,6 +43,7 @@ function ask(title, text, buttons) {
       b.textContent = label; b.value = value; if (ghost) b.className = "ghost";
       box.appendChild(b);
     });
+    d.returnValue = "";               // closed with Escape: not the button pressed last time
     d.onclose = () => resolve(d.returnValue);
     d.showModal();
   });
@@ -190,6 +191,7 @@ async function scan() {
 }
 
 function setFolders(r) {
+  if (r.root !== state.root) state.ticked = loadTicks(r.root);
   state.root = r.root;
   state.folders = r.folders;
   $("#rootName").textContent = r.root.split(/[\\/]/).filter(Boolean).pop() || r.root;
@@ -199,13 +201,87 @@ function setFolders(r) {
   $("#folderList").innerHTML = r.folders.map(f => {
     const s = steps(f);
     return `<li data-p="${esc(f.path)}" style="padding-left:${14 + f.depth * 14}px" class="${f.path === state.folder ? "sel" : ""}">
+      <input type="checkbox" class="tick" data-t="${esc(f.path)}" ${subtree(f).length ? "" : "disabled"}
+        title="${f.images ? "Tick to generate for this folder" : "Tick to generate for the folders inside"}">
       <span class="name" title="${esc(f.rel)}">${esc(f.rel.split("/").pop())}</span>
       <span class="steps" title="${esc(s.title)}">${s.dots.map(c => `<span class="dot3 ${c}"></span>`).join("")}</span>
       <span class="count ${s.done ? "done" : ""}">${f.images ? `${f.written}/${f.images}` : ""}</span>
     </li>`;
   }).join("");
-  $$("#folderList li").forEach(li => li.onclick = () => selectFolder(li.dataset.p));
+  $$("#folderList li").forEach(li => li.onclick = e => { if (!e.target.classList.contains("tick")) selectFolder(li.dataset.p); });
+  $$("#folderList .tick").forEach(cb => cb.onclick = () => toggleTick(cb.dataset.t));
+  renderTicks();
 }
+
+// ---- ticked folders: generate for several at once ------------------------------------------------------------
+// Only folders with images are kept as ticked; a parent's box shows whether the folders inside are (all, some, none).
+const subtree = f => state.folders.filter(x => x.images && (x.rel === f.rel || x.rel.startsWith(f.rel + "/")));
+const tickKey = root => "smp-ticked:" + root;
+function loadTicks(root) {
+  try { return new Set(JSON.parse(localStorage.getItem(tickKey(root)) || "[]")); } catch (_) { return new Set(); }
+}
+function saveTicks() {
+  try { localStorage.setItem(tickKey(state.root), JSON.stringify([...state.ticked])); } catch (_) {}
+}
+function toggleTick(path) {
+  const sub = subtree(state.folders.find(f => f.path === path));
+  const all = sub.every(f => state.ticked.has(f.path));
+  sub.forEach(f => all ? state.ticked.delete(f.path) : state.ticked.add(f.path));
+  saveTicks();
+  renderTicks();
+}
+const tickedFolders = () => state.folders.filter(f => f.images && state.ticked.has(f.path));
+function renderTicks() {
+  const valid = new Set(state.folders.filter(f => f.images).map(f => f.path));
+  state.ticked.forEach(p => valid.has(p) || state.ticked.delete(p));
+  $$("#folderList .tick").forEach(cb => {
+    const sub = subtree(state.folders.find(f => f.path === cb.dataset.t));
+    const n = sub.filter(f => state.ticked.has(f.path)).length;
+    cb.checked = sub.length > 0 && n === sub.length;
+    cb.indeterminate = n > 0 && n < sub.length;
+  });
+  const ticked = tickedFolders(), images = ticked.reduce((a, f) => a + f.images, 0);
+  $("#tickBar").hidden = !ticked.length;
+  $("#genTicked").textContent = `Generate ${ticked.length} folder${ticked.length === 1 ? "" : "s"} · ${images} image${images === 1 ? "" : "s"}`;
+  $("#genTicked").disabled = !!state.jobRunning;
+}
+$("#tickClear").onclick = () => { state.ticked.clear(); saveTicks(); renderTicks(); };
+
+async function generateTicked() {
+  let scope = tickedFolders();
+  const missing = scope.filter(f => f.brief === "missing");
+  if (missing.length) {
+    const v = await ask("No brief for " + (missing.length === 1 ? "1 ticked folder" : missing.length + " ticked folders"),
+      "Without a brief.md the model only describes what it sees: no project, place or story context. " +
+      "Missing: " + missing.map(f => f.rel.split("/").pop()).slice(0, 8).join(", ") + (missing.length > 8 ? "..." : ""),
+      [["Leave them out", "skip"], ["Generate anyway", "go", true], ["Cancel", "", true]]);
+    if (!v) return;
+    if (v === "skip") scope = scope.filter(f => f.brief !== "missing");
+    if (!scope.length) return;
+  }
+  // not done yet: no generated or written text, or written with a brief that has changed since
+  const total = scope.reduce((a, f) => a + f.images, 0);
+  const todo = scope.reduce((a, f) => a + Math.max(0, Math.min(f.images, f.images - f.written - f.pending + f.stale)), 0);
+  let skipDone = false;
+  if (todo < total) {
+    const v = await ask("Some images are already done",
+      `${total - todo} of ${total} images in these folders already have generated or written text.` +
+      (todo ? "" : " Nothing is left to do unless you generate them again."),
+      [...(todo ? [[`Only the ${todo} not done yet`, "new"]] : []), [`All ${total} again`, "all", !!todo], ["Cancel", "", true]]);
+    if (!v) return;
+    skipDone = v === "new";
+  }
+  try {
+    const folders = scope.map(f => f.path);
+    await api("/api/generate", { folders, skip_done: skipDone, backend: $("#backend").value });
+    setPreviewScope(folders);
+    state.finishedSeen = 0;
+    state.streamingPath = "";
+    openTab("preview");
+    poll();
+  } catch (e) { toast(e.message); }
+}
+$("#genTicked").onclick = generateTicked;
 
 // Step dots: brief · generated · written. Green only when that step is complete for every image; the brief dot
 // is half green when the folder only has a brief from a folder above, which still applies but says nothing of its own.
@@ -351,6 +427,7 @@ async function generate(all) {
   try {
     await api("/api/generate", { folder: all ? null : state.folder, backend: $("#backend").value });
     // watch it happen: Review & write shows each image's text as the model writes it
+    setPreviewScope(null);
     $("#scopeAll").checked = all;
     state.finishedSeen = 0;
     state.streamingPath = "";
@@ -401,7 +478,7 @@ async function poll() {
   const jump = $("#jumpNow");
   if (jump) jump.onclick = e => { e.preventDefault(); scrollToImage(j.current); };
   $("#stopBtn").hidden = !j.running;
-  $("#genFolder").disabled = $("#genAll").disabled = $("#rescanFolder").disabled = j.running;
+  $("#genFolder").disabled = $("#genAll").disabled = $("#rescanFolder").disabled = $("#genTicked").disabled = j.running;
   state.jobRunning = j.running;
   $$("#previewList .img-gen").forEach(b => (b.disabled = j.running));
 
@@ -478,7 +555,8 @@ const LONG_FIELDS = ["caption", "alt_text", "keywords"];
 // while the list is loading is never lost or overwritten by an older copy.
 function loadPreview() {
   const seq = state.previewSeq = (state.previewSeq || 0) + 1;
-  state.previewReady = api("/api/preview", previewOpts({ folder: $("#scopeAll").checked ? null : state.folder }))
+  const scope = !$("#scopeAll").checked ? { folder: state.folder } : state.previewFolders ? { folders: state.previewFolders } : {};
+  state.previewReady = api("/api/preview", previewOpts(scope))
     .then(r => {
       if (seq !== state.previewSeq) return;
       state.preview = r.images;
@@ -489,7 +567,14 @@ function loadPreview() {
 function previewOpts(extra) {
   return { replace_human: $("#replaceHuman").checked, override_credits: $("#overrideCredits").checked, ...extra };
 }
-["#replaceHuman", "#overrideCredits", "#scopeAll"].forEach(s => $(s).onchange = loadPreview);
+["#replaceHuman", "#overrideCredits"].forEach(s => $(s).onchange = loadPreview);
+$("#scopeAll").onchange = () => { setPreviewScope(null); loadPreview(); };
+// Review & write shows this folder, all folders, or (after generating for ticked folders) just those
+function setPreviewScope(folders) {
+  state.previewFolders = folders;
+  if (folders) $("#scopeAll").checked = true;
+  $("#scopeLabel").textContent = folders ? `The ${folders.length} ticked folder${folders.length === 1 ? "" : "s"}` : "All folders";
+}
 $("#pvFilter").onchange = renderPreview;
 
 const pending = img => img.rows.filter(r => r.selected);

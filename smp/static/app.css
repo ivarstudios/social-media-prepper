@@ -79,6 +79,10 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .folders .count { font-size: 11px; color: var(--muted); min-width: 48px; text-align: right; font-variant-numeric: tabular-nums; }
 .folders .count.done { color: var(--good); font-weight: 600; }
 .legend-dots { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.folders .tick { width: auto; margin: 0; padding: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
+.tick-bar { border-top: 1px solid var(--line); padding: 10px 14px; }
+.tick-links { display: flex; gap: 6px; }
+.tick-links #genTicked { flex: 1; }
 
 .main { min-width: 0; }
 /* a readable line length for the fields, centred in the main column */

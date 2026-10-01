@@ -143,15 +143,28 @@ def place_for(img: images.ImageFile):
     return geocoder().lookup(float(lat), float(lon))
 
 
-def in_scope(path: str, folder: str | None) -> bool:
+def in_scope(path: str, folder: str | None, folders: list[str] | None = None) -> bool:
+    """In this folder (not its subfolders), or in any of these folders; neither given: everything."""
+    if folders:
+        return Path(path).parent in {Path(f) for f in folders}
     if not folder:
         return True
     return Path(path).parent == Path(folder)
 
 
+def to_do(img: images.ImageFile, brief_digest: str) -> bool:
+    """Still needs the model: nothing generated or written yet, or written with a brief that has changed since."""
+    if "ai" in S.results.get(str(img.path), {}):
+        return False
+    written = bool(field_value(img.meta, "caption")) and bool(field_value(img.meta, "alt_text"))
+    wrote_with = img.meta.get("XMP-smp:BriefHash")
+    return not written or bool(wrote_with and wrote_with != brief_digest)
+
+
 # ---- generation job ------------------------------------------------------------------------------------------
 
-def run_job(folder: str | None, backend_name: str | None, paths: list[str] | None = None) -> None:
+def run_job(folder: str | None, backend_name: str | None, paths: list[str] | None = None,
+            folders: list[str] | None = None, skip_done: bool = False) -> None:
     s = config.load()
     job = S.job
     try:
@@ -167,10 +180,14 @@ def run_job(folder: str | None, backend_name: str | None, paths: list[str] | Non
         if paths:
             todo = [S.files[p] for p in paths if p in S.files]
         else:
-            todo = [f for p, f in S.files.items() if in_scope(p, folder)]
-        job.update(total=len(todo), done=0, cached=0, errors=0, message=f"Describing with {be.model}")
+            todo = [f for p, f in S.files.items() if in_scope(p, folder, folders)]
         defaults = defaults_from(s)
         briefs: dict[Path, brief.Resolved] = {}
+        if skip_done:
+            for img in todo:
+                briefs.setdefault(img.path.parent, brief.resolve(img.path.parent, defaults))
+            todo = [img for img in todo if to_do(img, briefs[img.path.parent].digest)]
+        job.update(total=len(todo), done=0, cached=0, errors=0, message=f"Describing with {be.model}")
         for img in todo:
             if job["stop"]:
                 job["message"] = "Stopped"
@@ -415,8 +432,10 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "Scan a folder first")
         S.job.update(running=True, stop=False, done=0, total=0, errors=0, cached=0, message="Starting...",
                      current="", partial={}, finished=[])
-        # "paths": just these images (a card's Generate button), else the folder, else everything
-        threading.Thread(target=run_job, args=(body.get("folder") or None, body.get("backend"), body.get("paths")),
+        # "paths": just these images (a card's Generate button), else the ticked "folders", else the folder,
+        # else everything. "skip_done": leave out images already generated or written (unless the brief changed).
+        threading.Thread(target=run_job, args=(body.get("folder") or None, body.get("backend"), body.get("paths"),
+                                               body.get("folders"), bool(body.get("skip_done"))),
                          daemon=True).start()
         return {"started": True}
 
@@ -439,6 +458,7 @@ def create_app() -> FastAPI:
         """Every image in scope: what its file holds now (editable) and the changes waiting to be written.
         {"path": ...} returns just that image, to refresh its card after writing it."""
         folder = body.get("folder") or None
+        folders = body.get("folders") or None
         only = body.get("path")
         opts = {"replace_human": bool(body.get("replace_human")),
                 "override_credits": bool(body.get("override_credits"))}
@@ -446,7 +466,7 @@ def create_app() -> FastAPI:
         briefs: dict[Path, brief.Resolved] = {}
         out = []
         for p, f in S.files.items():
-            if (only and p != only) or (not only and not in_scope(p, folder)):
+            if (only and p != only) or (not only and not in_scope(p, folder, folders)):
                 continue
             res = S.results.get(p, {})
             d = f.path.parent
