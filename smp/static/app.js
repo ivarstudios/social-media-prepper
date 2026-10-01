@@ -401,7 +401,10 @@ async function loadBrief() {
     else if (el.name === "body") el.value = b.own ? b.own.body : "";
     else {
       el.value = show(own[el.name] ?? "");
-      el.placeholder = el.dataset.ph ?? el.placeholder;
+      if (!("placeholder" in el)) continue;
+      // the page's own example first, so nothing inherited by the folder shown before is left behind
+      el.dataset.ph ??= el.placeholder;
+      el.placeholder = el.dataset.ph;
       if (!own[el.name] && eff[el.name]) el.placeholder = show(eff[el.name]) + " (inherited)";
     }
   }
