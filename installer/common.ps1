@@ -93,3 +93,18 @@ function Stop-OwnOllama([string]$toolsDir) {
     }
     if ($stopped) { Info "Stopped SMP's Ollama (the app starts it again when needed)"; Start-Sleep -Seconds 1 }
 }
+
+# ---- the firewall rule that lets other computers on the network open SMP ---------------------------------------------
+$FirewallRule = "IVAR SMP"      # the same name as in smp/network.py
+
+function Test-FirewallRule { return $null -ne (Get-NetFirewallRule -Name $FirewallRule -ErrorAction SilentlyContinue) }
+
+function Invoke-Elevated([string]$command) {
+    # runs a PowerShell command with admin rights (Windows asks first); true when it ran and succeeded
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ErrorActionPreference = 'Stop'; $command"))
+    try {
+        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden `
+             -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded)
+        return $p.ExitCode -eq 0
+    } catch { return $false }       # the user said no
+}

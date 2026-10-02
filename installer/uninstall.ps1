@@ -82,6 +82,8 @@ foreach ($k in "models", "tools", "data") {
 }
 Info "App files: the Python environment (.venv) and the installer's files in $Repo"
 if ($links) { Info "Shortcuts: IVAR SMP on the desktop and in the Start menu" }
+$rule = Test-FirewallRule
+if ($rule) { Info "Firewall rule: ""$FirewallRule"" (Windows asks for admin rights to remove it)" }
 if ($isClone) { Info "The code stays: this folder is a git clone." }
 else { Info "The app:   $Repo itself, last" }
 Info "A folder that also holds other files keeps them."
@@ -102,6 +104,10 @@ Get-ChildItem -LiteralPath $Repo -Recurse -Directory -Filter "__pycache__" -Erro
 Info "App files: removed"
 foreach ($lnk in $links) { Remove-Path $lnk }
 if ($links) { Info "Shortcuts: removed" }
+if ($rule) {
+    if (Invoke-Elevated "Remove-NetFirewallRule -Name '$FirewallRule'") { Info "Firewall rule: removed" }
+    else { Warn "The firewall rule ""$FirewallRule"" is still there: remove it in Windows Defender Firewall, Inbound Rules." }
+}
 if (-not (Same $f.data $LegacyData) -and (HasFiles $LegacyData)) {
     Info "Left ${LegacyData}: where an earlier version kept its data. Delete it if no other copy of SMP uses it."
 }

@@ -179,7 +179,11 @@
       <label>Claude model<input name="claude_model"></label>
       <label>Claude effort<select name="claude_effort"><option>low</option><option>medium</option><option>high</option></select></label>
       <label class="wide">ExifTool<input name="exiftool"></label>
+      <label>Other computers on the network<select name="lan">
+        <option value="on">Can open SMP</option><option value="off">Can't (this computer only)</option>
+      </select></label>
     </div>
+    <p class="muted small-text">A change to the network setting applies the next time SMP starts.</p>
     <h4>Folders</h4>
     <p class="muted">Chosen when installing. To change one, run install.bat (install.sh on Mac and Linux) again:
       it moves what's there.</p>
@@ -210,8 +214,23 @@
       <div class="actions"><input type="password" id="suKey" placeholder="API key (sk-ant-...)" autocomplete="off">
         <button type="button" id="suKeyBtn">Save key</button></div>
     </div>
+    <h4>Other computers</h4>
+    <div id="suNetwork"></div>
     <p id="suPlaces" class="muted small-text"></p>
     <div class="actions"><span class="spacer"></span><button value="close">Done</button></div>
+  </form>
+</dialog>
+
+<dialog id="browseDlg">
+  <form method="dialog">
+    <h3>Choose a folder</h3>
+    <p class="muted small-text">Folders on the computer SMP runs on. Network drives work when that computer has them
+      mapped.</p>
+    <div class="browse-bar"><button type="button" id="browseUp" class="ghost" title="Up one folder">Up</button>
+      <input id="browsePath" placeholder="Drives" autocomplete="off" spellcheck="false"></div>
+    <ul id="browseList" class="browse-list"></ul>
+    <div class="actions"><span id="browseInfo" class="muted"></span><span class="spacer"></span>
+      <button value="cancel" class="ghost">Cancel</button><button value="choose" id="browseChoose">Choose this folder</button></div>
   </form>
 </dialog>
 

@@ -14,7 +14,8 @@ files: finished derivatives that can be exported again. RAW files, PSDs and vide
 ## Install
 
 **Windows 10/11:** download this repository (green *Code* button → *Download ZIP*, or `git clone`), unzip it
-somewhere permanent, and double-click **`start.bat`**. The first start runs the installer, no admin rights needed.
+somewhere permanent, and double-click **`start.bat`**. The first start runs the installer, no admin rights needed
+(except once, for the firewall rule that lets other computers open SMP: see *From another computer*).
 It asks where three things go. Press Enter to keep the suggested folder, and everything stays inside the app folder:
 
 | Folder | What | Suggested |
@@ -70,6 +71,19 @@ machine yet.*
    suggestions you don't want, edit any text, and write one image with its own button (orange: unsaved changes,
    green: written) or everything with *Write all*. Written images stay here, so you can come back and fix a
    detail. *Undo* puts the old values back.
+
+### From another computer
+
+While SMP runs on one computer, any other computer on the same network can use it in a browser, with everything
+the app does: scanning, briefs, generating and writing. The console window and *Setup* show the address, such as
+`http://192.168.1.20:8765/`. Paths are the ones on the computer SMP runs on (*Choose folder* then browses its
+folders in the page, mapped network drives included), and the vision model runs there too. Everyone shares one
+session: the folder scanned and the job running are the same in every browser, so take turns.
+
+On Windows this needs a firewall rule, which the installer adds (Windows asks for admin rights once; `-NoNetwork`
+skips it). It lets other computers in on private and domain networks only, never on a public one: if SMP can't be
+reached, check that Windows calls the network *Private*. To keep SMP to this computer, set *Other computers on
+the network* in Settings to *Can't* and start SMP again.
 
 ## brief.md
 

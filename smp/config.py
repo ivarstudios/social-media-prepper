@@ -73,6 +73,7 @@ DEFAULTS: dict = {
     "claude_api_key": "",          # empty: ANTHROPIC_API_KEY or an `ant auth login` profile
     "exiftool": "",                # empty: tools/exiftool, then PATH
     "port": 8765,
+    "lan": "on",                   # "on": other computers on the network can open SMP too; "off": this one only
     "recent_folders": [],
 }
 OWN_OLLAMA_PORT = 11436

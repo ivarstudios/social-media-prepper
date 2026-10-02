@@ -1,6 +1,7 @@
 <#
   IVAR SMP installer for Windows 10/11 (PowerShell 5.1+). Run via install.bat (start.bat runs it on first use).
-  Safe to re-run: it repairs and updates. No admin rights needed.
+  Safe to re-run: it repairs and updates. No admin rights needed, except once (Windows asks) for the firewall rule
+  that lets other computers on the network open SMP in their browser.
 
   It asks where three things go, keeps the answers in locations.json in this folder, and moves what's already there
   when a folder changes (run it again to change one):
@@ -16,6 +17,7 @@
     -Yes              no questions: keep the folders (or use the ones given below) and accept all defaults
     -ClaudeOnly       don't install Ollama: use the Claude API only (no local model)
     -NoShortcuts      don't create desktop and Start menu shortcuts
+    -NoNetwork        don't add the firewall rule: only this computer can open SMP
     -ToolsDir <dir>   the programs folder
     -ModelsDir <dir>  the models folder
     -DataDir <dir>    the data folder
@@ -25,6 +27,7 @@ param(
     [switch]$Yes,
     [switch]$ClaudeOnly,
     [switch]$NoShortcuts,
+    [switch]$NoNetwork,
     [string]$ToolsDir = "",
     [string]$ModelsDir = "",
     [string]$DataDir = ""
@@ -416,6 +419,29 @@ if ($ClaudeOnly) {
     if (Test-Path $ollamaExe) { Info ("Ollama " + (Get-OllamaVersion $ollamaExe)) }
 }
 if ((Test-Path $Downloads) -and -not (HasFiles $Downloads)) { Remove-Item -Force $Downloads }
+
+# ---- network --------------------------------------------------------------------------------------------------------
+# SMP listens on the network so a browser on another PC can open it. Windows' firewall needs a rule for that (an admin
+# change). It covers the ports SMP tries (8765 and the 19 after it, see smp/__main__.py) on private and domain
+# networks, never public ones. Cancelling Windows' own "allow access" prompt for Python leaves block rules that win
+# over any allow rule, so those (for SMP's Python only) go too.
+if (-not $NoNetwork) {
+    Step "Letting other computers on the network open SMP"
+    if (Test-FirewallRule) { Info "The firewall lets them in (rule ""$FirewallRule"")" }
+    elseif (-not (AskYesNo "Let other computers on the network open SMP in their browser? Windows asks for admin rights once" $true)) {
+        Info "Skipped: only this computer can open SMP. Run install.bat again to change that."
+    } else {
+        $repoQ = $Repo.Replace("'", "''"); $toolsQ = $New.tools.Replace("'", "''")
+        $cmd = "New-NetFirewallRule -Name '$FirewallRule' -DisplayName '$FirewallRule' -Direction Inbound -Protocol TCP " +
+               "-LocalPort 8765-8784 -Action Allow -Profile Private,Domain " +
+               "-Description 'IVAR SMP: other computers on the network open the app in their browser' | Out-Null; " +
+               "Get-NetFirewallApplicationFilter | Where-Object { `$_.Program -like '$repoQ\*' -or " +
+               "`$_.Program -like '$toolsQ\*' } | Get-NetFirewallRule | " +
+               "Where-Object { `$_.Direction -eq 'Inbound' -and `$_.Action -eq 'Block' } | Remove-NetFirewallRule"
+        if (Invoke-Elevated $cmd) { Info "Done: on this network, other computers open SMP at http://<this computer>:8765/" }
+        else { Warn "The firewall rule wasn't added, so other computers can't open SMP. Run install.bat again and allow the change." }
+    }
+}
 
 # ---- shortcuts ------------------------------------------------------------------------------------------------------
 if (-not $NoShortcuts) {

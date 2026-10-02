@@ -15,7 +15,7 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-from smp import __version__, config, winicon
+from smp import __version__, config, network, winicon
 
 
 def free_port(start: int) -> int:
@@ -108,16 +108,20 @@ def main() -> None:
         return
     port = free_port(home)
     url = f"http://127.0.0.1:{port}/"
+    lan = config.load().get("lan") != "off"
     winicon.brand_console()
     if a.folder:
         S.scan(a.folder, True)
     print(f"IVAR SMP {__version__} is running at {url}  (close this window to stop it)")
+    if lan:
+        for ip in network.lan_addresses():
+            print(f"  from other computers on the network: http://{ip}:{port}/")
     if not a.no_browser:
         def show():
             if open_window(url):
                 winicon.brand_app_window()
         threading.Timer(1.2, show).start()
-    uvicorn.run(create_app(), host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(create_app(lan), host="0.0.0.0" if lan else "127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":

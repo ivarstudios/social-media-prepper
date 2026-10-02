@@ -19,7 +19,7 @@ def client(monkeypatch, exiftool_path, tmp_path):
     offline.download = lambda: None                  # never fetch place names in tests
     monkeypatch.setattr(server, "geocoder", lambda: offline)
     server.S = server.Session()
-    return TestClient(server.create_app()), fake
+    return TestClient(server.create_app(), client=("127.0.0.1", 50000)), fake     # a browser on this computer
 
 
 def wait_job(c):
@@ -117,6 +117,23 @@ def test_pick_folder_endpoint(client, monkeypatch):
     monkeypatch.setattr(server.picker, "pick_folder", lambda initial: "D:\Photos" if initial == "D:\\" else "")
     assert c.post("/api/pick-folder", json={"initial": "D:\\"}).json() == {"path": "D:\Photos"}
     assert c.post("/api/pick-folder", json={}).json() == {"path": ""}
+
+
+def test_another_computer_browses_folders_instead_of_the_dialog(client, monkeypatch, tmp_path):
+    # client: only for its fake model and fresh session; this browser is on another computer
+    c = TestClient(server.create_app(lan=True), client=("192.0.2.77", 50000))
+    monkeypatch.setattr(server.picker, "pick_folder", lambda initial: pytest.fail("dialog opened on this computer"))
+    assert c.post("/api/pick-folder", json={}).status_code == 409
+    net = c.get("/api/status").json()["network"]
+    assert net["on"] and not net["here"]
+    make_image(tmp_path / "Shoot" / "a.jpg")
+    (tmp_path / "Shoot" / "Selects").mkdir()
+    (tmp_path / "Shoot" / ".hidden").mkdir()
+    r = c.get("/api/browse", params={"path": str(tmp_path / "Shoot")}).json()
+    assert r["path"] == str((tmp_path / "Shoot").resolve()) and r["parent"] == str(tmp_path.resolve())
+    assert r["images"] == 1 and [f["name"] for f in r["folders"]] == ["Selects"]
+    assert c.get("/api/browse").json()["folders"]                  # the drives, or / and home
+    assert c.get("/api/browse", params={"path": str(tmp_path / "nope")}).status_code == 404
 
 
 def test_saving_a_brief_keeps_fields_the_form_doesnt_show(client, tmp_path):

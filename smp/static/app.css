@@ -202,6 +202,14 @@ dialog h4 { margin: 18px 0 8px; }
 .locations { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
 .locations dt { color: var(--muted); }
 .locations dd { margin: 0; overflow-wrap: anywhere; }
+/* choosing a folder from another computer's browser */
+.browse-bar { display: flex; gap: 8px; }
+.browse-bar input { flex: 1; font-family: ui-monospace, Consolas, monospace; }
+.browse-list { list-style: none; margin: 10px 0 0; padding: 0; height: min(52vh, 420px); overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; }
+.browse-list li { padding: 7px 12px; cursor: pointer; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.browse-list li:hover { background: var(--keep); }
+.browse-list li.head { cursor: default; background: none; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.browse-list li.empty-note { cursor: default; color: var(--muted); }
 
 /* the image the model is writing about right now */
 .card.is-streaming { border-color: var(--info); box-shadow: 0 0 0 1px var(--info); }

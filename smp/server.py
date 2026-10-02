@@ -9,11 +9,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from smp import __version__, brief, config, images, machine, picker, plan, store, vlm
+from smp import __version__, brief, config, images, machine, network, picker, plan, store, vlm
 from smp.exif import ExifTool, ExifToolError, field_value
 from smp.geo import geocoder
 
@@ -185,6 +185,15 @@ def place_for(img: images.ImageFile):
     return geocoder().lookup(float(lat), float(lon))
 
 
+def roots() -> list[str]:
+    """Where browsing this computer's folders starts: its drives on Windows, else / and the home folder."""
+    if os.name == "nt":
+        drives = getattr(os, "listdrives", None)
+        found = drives() if drives else [f"{c}:\\" for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{c}:\\")]
+        return [d for d in found if d[:1].upper() not in "AB"]       # no floppy drives
+    return ["/", str(Path.home())]
+
+
 def in_scope(path: str, folder: str | None, folders: list[str] | None = None) -> bool:
     """In this folder (not its subfolders), or in any of these folders; neither given: everything."""
     if folders:
@@ -269,7 +278,8 @@ def run_job(folder: str | None, backend_name: str | None, paths: list[str] | Non
 
 # ---- app -----------------------------------------------------------------------------------------------------
 
-def create_app() -> FastAPI:
+def create_app(lan: bool = False) -> FastAPI:
+    """lan: listening on every network interface, so other computers can open the app too."""
     app = FastAPI(title="IVAR SMP", version=__version__)
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
 
@@ -291,8 +301,11 @@ def create_app() -> FastAPI:
         return FileResponse(STATIC / "smp-icon.ico")
 
     @app.get("/api/status")
-    def status():
-        """Everything the Setup panel shows: tools, GPU, the local model and the Claude key."""
+    def status(request: Request):
+        """Everything the Setup panel shows: tools, GPU, the local model, the Claude key and the network.
+
+        network.here: the browser asking runs on this computer (else the page browses folders itself, see
+        /api/browse, since the operating system's folder dialog would open on this computer instead)."""
         s = config.load()
         g = machine.gpu()
         rec = machine.recommended()
@@ -306,7 +319,11 @@ def create_app() -> FastAPI:
                "claude_key_saved": bool(s.get("claude_api_key")),
                "folders": {"tools": str(config.tools_dir()), "models": s["ollama_models_dir"],
                            "data": str(config.data_dir())},
-               "pull": dict(PULL)}
+               "pull": dict(PULL),
+               "network": {"on": lan, "here": network.is_this_computer(request.client and request.client.host),
+                           "urls": [f"http://{ip}:{request.url.port or 80}/" for ip in network.lan_addresses()]
+                           if lan else [],
+                           "firewall": network.firewall_rule() if lan else None}}
         try:
             out["exiftool"] = ExifTool(s["exiftool"]).version()
         except (ExifToolError, OSError) as e:
@@ -366,9 +383,39 @@ def create_app() -> FastAPI:
         return s
 
     @app.post("/api/pick-folder")
-    def pick_folder(body: dict = Body(default={})):
+    def pick_folder(request: Request, body: dict = Body(default={})):
         """Opens the operating system's folder dialog on this computer; waits until the user closes it."""
+        if not network.is_this_computer(request.client and request.client.host):
+            raise HTTPException(409, "The folder dialog only opens on the computer SMP runs on")
         return {"path": picker.pick_folder(body.get("initial") or "")}
+
+    @app.get("/api/browse")
+    def browse(path: str = ""):
+        """The folders in a folder on this computer, for choosing one from another computer's browser.
+        No path: the drives (Windows) or / and the home folder, and the folders opened recently."""
+        if not path:
+            return {"path": "", "parent": "", "images": 0, "folders": [{"name": r, "path": r} for r in roots()],
+                    "recent": [f for f in config.load().get("recent_folders", []) if os.path.isdir(f)]}
+        d = Path(path).expanduser()
+        if not d.is_dir():
+            raise HTTPException(404, f"No such folder: {path}")
+        d = d.resolve()
+        folders, n = [], 0
+        try:
+            for e in os.scandir(d):
+                try:
+                    if e.name.startswith((".", "$")):
+                        continue
+                    if e.is_dir():
+                        folders.append({"name": e.name, "path": e.path})
+                    elif images.is_image(Path(e.path)):
+                        n += 1
+                except OSError:
+                    continue
+        except PermissionError as e:
+            raise HTTPException(403, f"No access to {d}") from e
+        folders.sort(key=lambda f: f["name"].lower())
+        return {"path": str(d), "parent": str(d.parent) if d.parent != d else "", "images": n, "folders": folders}
 
     @app.post("/api/scan")
     def scan(body: dict = Body(...)):

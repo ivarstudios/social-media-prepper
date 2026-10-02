@@ -94,6 +94,18 @@ function renderSetup(s) {
   $("#suKeyState").innerHTML = s.claude_key
     ? `<div class="check-row ok">A key is set${s.claude_key_saved ? " (saved in SMP)" : " (from the environment)"}. Model: ${esc(s.claude_model)}.</div>`
     : `<div class="check-row">No API key yet. Create one at console.anthropic.com and paste it here.</div>`;
+  const n = s.network || {};
+  let net;
+  if (!n.on) net = `<div class="check-row">Only this computer can open SMP. To let other computers on the network
+    open it, turn that on in Settings (Advanced) and start SMP again.</div>`;
+  else if (!n.urls.length) net = `<div class="check-row">This computer isn't on a network right now.</div>`;
+  else {
+    const links = n.urls.map(u => `<code>${esc(u)}</code>`).join(" or ");
+    net = `<div class="check-row ok">A browser on another computer in the network opens SMP at ${links}.</div>`;
+    if (n.firewall === false) net += `<div class="check-row bad">The Windows firewall doesn't let other computers in
+      yet. Run install.bat again on this computer and allow the change it asks for.</div>`;
+  }
+  $("#suNetwork").innerHTML = net;
   $("#suPlaces").textContent = s.places ? "Place names for GPS positions are installed." :
     "Place names for GPS positions (about 10 MB) download on the first run.";
 }
@@ -164,8 +176,12 @@ $("#settingsDlg").addEventListener("close", async () => {
 $("#backend").onchange = () => api("/api/settings", { backend: $("#backend").value }).then(loadStatus);
 
 // ---- choose & scan ------------------------------------------------------------------------------------------
-// The server opens the operating system's own folder dialog (it may appear behind the browser on some systems).
+// On the computer SMP runs on, the server opens the operating system's own folder dialog (it may appear behind
+// the browser on some systems). From another computer that dialog would open over there, so the page lets you
+// browse that computer's folders itself.
 $("#browseBtn").onclick = async () => {
+  const here = (state.status || await loadStatus())?.network?.here !== false;
+  if (!here) return browseFolders();
   const btn = $("#browseBtn");
   btn.disabled = true;
   btn.textContent = "Choosing...";
@@ -177,6 +193,54 @@ $("#browseBtn").onclick = async () => {
   btn.textContent = "Choose folder";
 };
 $("#scanForm").onsubmit = e => { e.preventDefault(); scan(); };
+
+async function browseFolders() {
+  const d = $("#browseDlg");
+  d.returnValue = "";
+  d.onclose = () => {
+    if (d.returnValue !== "choose" || !state.browsing) return;
+    $("#folder").value = state.browsing;
+    scan();
+  };
+  d.showModal();
+  await browseTo($("#folder").value.trim() || state.root);
+}
+
+// Shows the folders in path ("": the drives and the folders opened recently); a folder that's gone shows the drives.
+async function browseTo(path) {
+  let r;
+  try { r = await api(`/api/browse?path=${encodeURIComponent(path || "")}`); }
+  catch (e) {
+    if (!path) { toast(e.message); return; }
+    toast(e.message);
+    return browseTo("");
+  }
+  state.browsing = r.path;
+  state.browseParent = r.parent;
+  $("#browsePath").value = r.path;
+  $("#browseUp").disabled = !r.path;
+  $("#browseChoose").disabled = !r.path;
+  $("#browseInfo").textContent = r.path ? (r.images ? `${r.images} image${r.images === 1 ? "" : "s"} in this folder` :
+    "No images directly in this folder") : "";
+  const item = (f, label) => `<li data-path="${esc(f.path)}">${esc(label ?? f.name)}</li>`;
+  let html = "";
+  if (r.recent?.length) html += `<li class="head">Opened recently</li>` + r.recent.map(f => item({ path: f }, f)).join("");
+  if (!r.path) html += `<li class="head">Drives</li>`;
+  html += r.folders.map(f => item(f)).join("");
+  if (r.path && !r.folders.length) html += `<li class="empty-note">No folders in here</li>`;
+  $("#browseList").innerHTML = html;
+  $("#browseList").scrollTop = 0;
+}
+$("#browseList").onclick = e => {
+  const li = e.target.closest("li[data-path]");
+  if (li) browseTo(li.dataset.path);
+};
+$("#browseUp").onclick = () => browseTo(state.browseParent);
+$("#browsePath").onkeydown = e => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();             // not the dialog's default button
+  browseTo($("#browsePath").value.trim());
+};
 
 async function scan() {
   const folder = $("#folder").value.trim();
