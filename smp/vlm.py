@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 from smp import machine, store
 
 log = logging.getLogger(__name__)
-PROMPT_VERSION = "5"
+PROMPT_VERSION = "6"
 LANGUAGES = {"en": "English", "sv": "Swedish"}
 
 
@@ -34,6 +34,8 @@ class ImageMetadata(BaseModel):
     alt_text: str = Field(min_length=1, description="Alt text for screen readers: what is visible, 1-2 sentences, "
                                                     "under 250 characters.")
     keywords: list[str] = Field(min_length=1, description="6-15 lowercase keywords.")
+    people_count: int = Field(description="How many people are clearly visible: 0 when none. For a crowd, an "
+                                          "estimate.")
 
 
 SYSTEM = """You write metadata for a photographer's archive of finished images: photos, phone pictures, \
@@ -65,6 +67,7 @@ ethnicity, religion, health, disability, sexual orientation, political views or 
 text exactly. It gives no background the image doesn't show.
 - Keywords: subjects, setting, activity, event, landscape and place names from the brief or file facts, and \
 the names of people the brief names who are in the image. No words like "photo" or "image".
+- people_count: the people you can clearly see in the image, 0 when there are none. Not the people the brief mentions, and not ones too small or blurred to make out as people.
 - Always fill in the title, caption, alt text and keywords, also without a brief: then describe what is visible.
 - Write every text field in {language}. Keywords too."""
 
@@ -96,6 +99,11 @@ def clean(meta: dict) -> dict:
             seen.add(k)
             kws.append(k)
     out["keywords"] = kws[:20]
+    if "people_count" in out:             # missing: an answer from before SMP asked for it
+        try:
+            out["people_count"] = max(0, int(out["people_count"]))
+        except (TypeError, ValueError):
+            del out["people_count"]
     return out
 
 

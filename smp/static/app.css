@@ -165,6 +165,7 @@ code { background: var(--keep); padding: 1px 4px; border-radius: 4px; }
 .more { margin-top: var(--gap-s); }
 .more summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 4px 6px; }
 .pv-filter { width: auto; }
+.card .people-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
 .card .fname { font-size: 12px; color: var(--muted); margin-top: 6px; word-break: break-all; }
 .card .err { color: var(--bad); font-size: 12px; }
 .rows { width: 100%; border-collapse: collapse; }

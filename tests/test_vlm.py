@@ -31,7 +31,15 @@ def test_clean_removes_em_dashes_and_tidies_keywords():
 
 def test_schema_is_only_what_social_media_needs():
     schema = vlm.ImageMetadata.model_json_schema()
-    assert set(schema["properties"]) == {"title", "caption", "alt_text", "keywords"}
+    assert set(schema["properties"]) == {"title", "caption", "alt_text", "keywords", "people_count"}
+
+
+def test_clean_keeps_a_sane_people_count():
+    base = {"title": "t", "caption": "c", "alt_text": "a", "keywords": []}
+    assert vlm.clean({**base, "people_count": "3"})["people_count"] == 3
+    assert vlm.clean({**base, "people_count": -2})["people_count"] == 0
+    assert "people_count" not in vlm.clean({**base, "people_count": "a few"})
+    assert "people_count" not in vlm.clean(base)              # an answer from before the count: not 0
 
 
 def test_partial_fields_read_an_unfinished_answer():

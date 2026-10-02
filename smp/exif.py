@@ -53,6 +53,8 @@ FIELDS: dict[str, Field] = {
     "shot_type": Field(("XMP-smp:ShotType",)),
     "focal_point": Field(("XMP-smp:FocalPoint",)),
     "language": Field(("XMP-smp:Language",)),
+    # how many people the model saw (or a person corrected it to): Review & write shows only images with people
+    "people_count": Field(("XMP-smp:PeopleCount",)),
 }
 
 SMP_TAGS = ("XMP-smp:Version", "XMP-smp:Model", "XMP-smp:BriefHash", "XMP-smp:Written",

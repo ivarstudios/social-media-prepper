@@ -18,7 +18,7 @@ from smp.exif import FIELDS, GPS_TAGS, SMP_TAGS, ExifTool, as_list, as_text, ass
 from smp.geo import NEAR_KM, Place
 
 # What SMP writes: only what matters when preparing images for social media.
-AI_TEXT = ["title", "caption", "alt_text"]
+AI_TEXT = ["title", "caption", "alt_text", "people_count"]     # what the model writes, besides keywords
 CREDITS = ["creator", "credit", "copyright", "usage"]
 LOCATION = ["place", "city", "region", "country", "country_code"]
 # The fields a person can see and edit for every image, in the order they're shown.
@@ -27,7 +27,7 @@ EDITABLE = AI_TEXT + ["keywords"] + LOCATION[:4] + CREDITS
 OBSOLETE_SMP = ["season", "time_of_day", "shot_type", "crop_fit", "focal_point", "language"]   # XMP-smp only
 OBSOLETE_IF_OURS = ["extended_description", "source_type", "flags"]      # flags a person edited are kept
 LABELS = {"title": "Title", "caption": "Caption", "alt_text": "Alt text", "keywords": "Keywords",
-          "flags": "Flags (old)",
+          "flags": "Flags (old)", "people_count": "People visible",
           "creator": "Creator", "credit": "Credit line", "copyright": "Copyright", "usage": "Usage terms",
           "place": "Place", "city": "City", "region": "Region", "country": "Country", "country_code": "Country code",
           "gps": "GPS position", "season": "Season (old)", "time_of_day": "Time of day (old)",
@@ -95,7 +95,8 @@ def _row(field, current, proposed, action, selected, group) -> Row:
 
 def ai_values(ai: dict) -> dict:
     return {"title": ai.get("title", ""), "caption": ai.get("caption", ""), "alt_text": ai.get("alt_text", ""),
-            "keywords": ai.get("keywords", [])}
+            "keywords": ai.get("keywords", []),
+            "people_count": str(ai["people_count"]) if "people_count" in ai else ""}
 
 
 def propose(meta: dict, ai: dict | None, brief_meta: dict, place: Place | None, replace_human: bool = False,

@@ -53,7 +53,7 @@ def test_full_flow(client, tmp_path):
     prev = c.post("/api/preview", json={"folder": summer["path"]}).json()["images"]
     assert len(prev) == 2
     fields = {r["field"] for r in prev[0]["rows"]}
-    assert {"title", "caption", "alt_text", "keywords", "creator"} <= fields
+    assert {"title", "caption", "alt_text", "keywords", "creator", "people_count"} <= fields
 
     items = [{"path": i["path"], "rows": [r for r in i["rows"] if r["selected"]]} for i in prev]
     w = c.post("/api/write", json={"items": items}).json()
@@ -61,10 +61,12 @@ def test_full_flow(client, tmp_path):
     again = c.post("/api/preview", json={"folder": summer["path"]}).json()["images"]
     assert len(again) == 2 and all(i["rows"] == [] and i["done"] for i in again)   # still listed, nothing pending
     assert again[0]["current"]["caption"]                                          # showing what's in the file
+    assert again[0]["current"]["people_count"] == "1"                              # XMP-smp:PeopleCount
 
     u = c.post("/api/undo", json={"run_id": w["run_id"]}).json()
     assert u["restored"] == 2
-    assert c.post("/api/preview", json={"folder": summer["path"]}).json()["images"]
+    undone = c.post("/api/preview", json={"folder": summer["path"]}).json()["images"]
+    assert undone and undone[0]["current"]["people_count"] == ""
 
     t = c.get(prev[0]["thumb"])
     assert t.status_code == 200 and t.headers["content-type"] == "image/jpeg"

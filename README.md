@@ -121,6 +121,7 @@ Only what matters when preparing images for social media:
 | Keywords | search, and the starting point for hashtags | XMP `dc:subject` (+ IPTC Keywords if present) | model; your own keywords are kept |
 | Place, city, region, country | location tag and captions | IPTC location fields | brief, else GPS looked up offline (GeoNames) |
 | Creator, credit, copyright, usage terms | credit lines; restricted sets | XMP/IPTC rights fields | brief (or Settings), never the model |
+| People visible | *Only with people* in Review & write: check the images where a name could be wrong | `XMP-smp:PeopleCount` | model: how many people it clearly sees; you can correct it |
 
 *Remove GPS* in a brief strips the position from the files (wolf dens, camera traps, undisclosed caves). Fields
 that earlier versions wrote and SMP no longer uses (flags, focal point, crops, season and so on) show up in the preview as

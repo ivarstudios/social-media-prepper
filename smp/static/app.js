@@ -324,7 +324,7 @@ function setFolders(r) {
       <span class="count ${s.done ? "done" : ""}">${f.images ? `${f.written}/${f.images}` : ""}</span>
     </li>`;
   }).join("");
-  $$("#folderList li").forEach(li => li.onclick = e => { if (!e.target.classList.contains("tick")) selectFolder(li.dataset.p); });
+  $$("#folderList li").forEach(li => li.onclick = e => { if (!e.target.classList.contains("tick")) selectFolder(li.dataset.p, true); });
   $$("#folderList .tick").forEach(cb => cb.onclick = () => toggleTick(cb.dataset.t));
   renderTicks();
 }
@@ -420,8 +420,14 @@ function steps(f) {
 
 async function refreshFolders() { setFolders(await api("/api/folders")); }
 
-async function selectFolder(path) {
+// picked: the user clicked it in the folder list, so Review & write shows this folder too (not all or the ticked ones)
+async function selectFolder(path, picked = false) {
   if (!(await briefChangesOk(true))) return false;
+  if (picked && $("#scopeAll").checked) { setPreviewScope(null); $("#scopeAll").checked = false; }
+  if (path !== state.folder) {                 // never the folder before's images while this one's are loading
+    $("#imageGrid").innerHTML = "";
+    if (!$("#scopeAll").checked) $("#previewList").innerHTML = "";
+  }
   state.folder = path;
   $$("#folderList li").forEach(li => li.classList.toggle("sel", li.dataset.p === path));
   const f = state.folders.find(x => x.path === path) || { images: 0, rel: path, brief: "missing" };
@@ -568,15 +574,26 @@ $("#draftBtn").onclick = async () => {
 };
 
 // ---- images -------------------------------------------------------------------------------------------------
+// Only the newest load is shown: a big folder's list arriving late never covers the folder picked after it.
 async function loadImages() {
+  const seq = state.imagesSeq = (state.imagesSeq || 0) + 1;
   const list = await api("/api/images?folder=" + encodeURIComponent(state.folder));
+  if (seq !== state.imagesSeq) return;
   const mark = { described: "✓", error: "⚠" };
   $("#imageGrid").innerHTML = list.map(i => `<figure>
       <img loading="lazy" src="${i.thumb}" data-full="${esc(i.path)}" alt="">
       <figcaption><span class="st">${mark[i.status] || ""}</span><div class="t">${esc(i.title || i.name)}</div>
       <div class="muted">${esc((i.caption || "").slice(0, 140))}</div></figcaption></figure>`).join("")
-    || `<p class="muted">No images directly in this folder.</p>`;
+    || `<p class="muted">${noImagesHere()}</p>`;
   $$("#imageGrid img").forEach(img => img.onclick = () => zoom(img.dataset.full));
+}
+
+// for a folder without images of its own (shown in the list because folders inside it have some)
+function noImagesHere() {
+  const f = state.folders.find(x => x.path === state.folder);
+  const below = f ? subtree(f).reduce((a, x) => a + x.images, 0) : 0;
+  return "Empty: no images directly in this folder." +
+    (below ? ` The folders inside it have ${below}: pick one on the left.` : "");
 }
 
 function zoom(path) {
@@ -725,8 +742,8 @@ const ACT = { new: "new", update: "update", replace: "replace", keep: "keep (per
   differs: "differs", remove: "remove", edited: "your edit" };
 const FIELD_LABELS = { title: "Title", caption: "Caption", alt_text: "Alt text", keywords: "Keywords",
   place: "Place", city: "City", region: "Region", country: "Country", creator: "Creator", credit: "Credit line",
-  copyright: "Copyright", usage: "Usage terms" };
-const MAIN_FIELDS = ["title", "caption", "alt_text", "keywords"];
+  copyright: "Copyright", usage: "Usage terms", people_count: "People visible" };
+const MAIN_FIELDS = ["title", "caption", "alt_text", "keywords", "people_count"];
 const MORE_FIELDS = ["place", "city", "region", "country", "creator", "credit", "copyright", "usage"];
 const LIST_FIELDS = ["keywords", "creator"];
 const LONG_FIELDS = ["caption", "alt_text", "keywords"];
@@ -756,6 +773,53 @@ function setPreviewScope(folders) {
   $("#scopeLabel").textContent = folders ? `The ${folders.length} ticked folder${folders.length === 1 ? "" : "s"}` : "All folders";
 }
 $("#pvFilter").onchange = renderPreview;
+$("#pvPeople").onchange = renderPreview;
+
+// Images with people in them: the model counts the people it sees (People visible, kept in the file). Images
+// generated before it did fall back on the words in their text, English and Swedish: that finds "the bride",
+// "a hiker", "Anna and her friends", but not a caption that only gives names.
+const PEOPLE_WORDS = [
+  // English
+  "people", "persons?", "m[ae]n", "wom[ae]n", "boys?", "girls?", "child(?:ren)?", "kids?", "bab(?:y|ies)", "toddlers?",
+  "teen(?:ager)?s?", "adults?", "famil(?:y|ies)", "couples?", "brides?", "grooms?", "bridesmaids?", "groomsmen",
+  "newlyweds?", "guests?", "friends?", "crowds?", "audiences?", "spectators?", "portraits?", "selfies?", "faces?",
+  "he", "she", "his", "her", "him", "himself", "herself", "hikers?", "climbers?", "mountaineers?", "skiers?",
+  "snowboarders?", "runners?", "cyclists?", "riders?", "surfers?", "swimmers?", "paddlers?", "kayakers?",
+  "photographers?", "musicians?", "singers?", "dancers?", "players?", "workers?", "officiants?", "fathers?",
+  "mothers?", "dads?", "moms?", "mums?", "sons?", "daughters?", "brothers?", "sisters?", "husbands?", "wife", "wives",
+  "grand(?:mother|father|parent|child)s?", "grandchildren", "parents?", "colleagues?", "speakers?", "performers?",
+  "athletes?", "tourists?", "visitors?", "travell?ers?", "lad(?:y|ies)", "gentlem[ae]n", "guys?", "students?",
+  "fisherm[ae]n", "farmers?", "volunteers?", "participants?", "attendees?", "someone", "somebody", "everyone",
+  "individuals?", "figures?", "silhouettes?",
+  // Swedish
+  "person(?:en|er|erna)?", "människ(?:a|an|or|orna)", "mannen", "männen", "kvinn(?:a|an|or|orna)", "pojk(?:e|en|ar|arna)",
+  "flick(?:a|an|or|orna)", "tjej(?:en|er|erna)?", "kill(?:e|en|ar|arna)", "barn(?:et|en)?", "bebis(?:en|ar|arna)?",
+  "famil(?:j|jen|jer|jerna)", "brud(?:en|gum|gummen|par|paret|tärn(?:a|an|or|orna))?", "gäst(?:en|er|erna)?",
+  "vän(?:nen|ner|nerna)?", "kompis(?:en|ar|arna)?", "publik(?:en)?", "porträtt(?:et)?", "ansikt(?:e|et|en|ena)",
+  "hon", "hans", "hennes", "honom", "vandrar(?:e|en|na)", "klättrar(?:e|en|na)", "skidåkar(?:e|en|na)",
+  "löpar(?:e|en|na)", "cyklist(?:en|er|erna)?", "fotograf(?:en|er|erna)?", "musiker(?:n|na)?",
+  "sångar(?:e|en|na)", "sångersk(?:a|an|or|orna)", "dansar(?:e|en|na)", "spelar(?:e|en|na)", "pappa(?:n|or|orna)?",
+  "mamma(?:n|or|orna)?", "sonen", "söner(?:na)?", "dotter(?:n)?", "döttrar(?:na)?", "brodern", "bröder(?:na)?",
+  "syst(?:er|ern|rar|rarna)", "maken", "fru(?:n|ar|arna)?", "(?:mor|far)(?:mor|far)(?:n)?", "föräld(?:er|rar|rarna)",
+  "turist(?:en|er|erna)?", "besökar(?:e|en|na)", "folk(?:et)?", "ungdom(?:ar|arna)?", "deltagar(?:e|en|na)",
+  "kolleg(?:a|an|or|orna)", "gestalt(?:en|er|erna)?", "siluett(?:en|er|erna)?",
+];
+const PEOPLE_RE = new RegExp(`(?<![\\p{L}\\p{N}])(?:${PEOPLE_WORDS.join("|")})(?![\\p{L}\\p{N}])`, "giu");
+const PEOPLE_FIELDS = ["title", "caption", "alt_text", "keywords"];
+// how many people are visible as the file will have it (after writing what's ticked), or null when not counted
+function peopleCount(img) {
+  const r = img.rows.find(x => x.field === "people_count");
+  const v = parseInt(show(r && r.selected ? r.proposed : img.current.people_count), 10);
+  return Number.isNaN(v) ? null : v;
+}
+const hasPeople = img => { const n = peopleCount(img); return n === null ? peopleWords(img).length > 0 : n > 0; };
+// the people words an image's text uses, e.g. ["bride", "guests"]; none: no people as far as the text says
+function peopleWords(img) {
+  const texts = PEOPLE_FIELDS.map(f => show(img.current[f]));
+  img.rows.forEach(r => { if (PEOPLE_FIELDS.includes(r.field)) texts.push(show(r.proposed)); });
+  if (img.partial) PEOPLE_FIELDS.forEach(f => texts.push(show(img.partial[f])));
+  return [...new Set(texts.join("\n").match(PEOPLE_RE)?.map(w => w.toLowerCase()) || [])];
+}
 
 const pending = img => img.rows.filter(r => r.selected);
 function cardState(img) {
@@ -819,12 +883,15 @@ function writeButton(img, i) {
 
 function renderPreview() {
   const list = $("#previewList");
-  const onlyDirty = $("#pvFilter").value === "unsaved";
+  const onlyDirty = $("#pvFilter").value === "unsaved", onlyPeople = $("#pvPeople").checked;
   const shown = state.preview.map((img, i) => [img, i])
-    .filter(([img]) => !onlyDirty || img.streaming || cardState(img) === "dirty");
+    .filter(([img]) => !onlyDirty || img.streaming || cardState(img) === "dirty")
+    .filter(([img]) => !onlyPeople || img.streaming || hasPeople(img));
   if (!shown.length) {
-    list.innerHTML = `<p class="muted">${state.preview.length ? "Nothing unsaved: every image shown is written." :
-      "No images here. Pick a folder with images, or tick All folders."}</p>`;
+    list.innerHTML = `<p class="muted">${!state.preview.length ?
+      ($("#scopeAll").checked ? "No images in these folders." : noImagesHere()) :
+      onlyPeople ? `No ${onlyDirty ? "unsaved " : ""}images with people, going by their text.` :
+      "Nothing unsaved: every image shown is written."}</p>`;
     updateCount();
     return;
   }
@@ -838,11 +905,20 @@ function cardHtml(img, i) {
   const moreOpen = img.rows.some(r => MORE_FIELDS.includes(r.field));
   return `<div class="card" data-card="${i}"><div class="card-side">
       <img loading="lazy" src="${img.thumb}" data-full="${esc(img.path)}">
-      <div class="fname">${esc(img.rel)}</div>${img.error ? `<div class="err">${esc(img.error)}</div>` : ""}
+      <div class="fname">${esc(img.rel)}</div>${peopleHint(img)}${img.error ? `<div class="err">${esc(img.error)}</div>` : ""}
       ${genButton(img, i)}${writeButton(img, i)}</div>
     <div><table class="rows">${MAIN_FIELDS.map(f => fieldRow(img, i, f)).join("")}${otherRows(img, i)}</table>
       <details class="more" ${moreOpen ? "open" : ""}><summary>Location and credits</summary>
         <table class="rows">${MORE_FIELDS.map(f => fieldRow(img, i, f)).join("")}</table></details></div></div>`;
+}
+
+// with Only with people on: the words that made the image count, so a wrong match is easy to spot
+function peopleHint(img) {
+  if (!$("#pvPeople").checked) return "";
+  if (peopleCount(img) !== null) return "";            // the People visible row says it
+  const words = peopleWords(img);
+  return words.length ? `<div class="people-hint" title="Not counted by the model yet: generate again for a count">` +
+    `From the text: ${esc(words.slice(0, 5).join(", "))}</div>` : "";
 }
 
 // The image the model is working on: its text appears as it's written, read-only until the answer is complete.
