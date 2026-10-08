@@ -189,3 +189,12 @@ Ideas that aren't built yet are in [`roadmap/`](roadmap/).
 - Place names come from [GeoNames](https://www.geonames.org), licensed under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 - [uv](https://github.com/astral-sh/uv) installs Python and the app's packages.
+
+## License
+
+[Functional Source License, Version 1.1, ALv2 Future License](LICENSE.md) (FSL-1.1-ALv2). Read it, use it for your
+own work (at a studio or company too), change it and share it: anything except offering it, or something built on
+it, as a competing commercial product or service. Two years after each version is released, that version is also
+yours under the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+
+The license doesn't cover the IVAR Studios and IVAR SMP names or the logo.
