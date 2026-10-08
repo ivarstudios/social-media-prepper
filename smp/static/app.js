@@ -83,7 +83,10 @@ function renderSetup(s) {
     ` into <code>${esc(s.folders.models)}</code>.</div>`;
   $("#suModel").innerHTML = model;
   const p = s.pull || {};
-  $("#suPullBtn").hidden = !o.exe || o.ready;
+  const here = s.network?.here !== false;            // another computer can't download models or save the key
+  $("#suRemote").hidden = here;
+  $("#suKeyRow").hidden = !here;
+  $("#suPullBtn").hidden = !o.exe || o.ready || !here;
   $("#suPullBtn").disabled = !!p.running;
   $("#suPull").hidden = !p.running && !p.error;
   if (p.running || p.error) {
@@ -153,8 +156,11 @@ async function loadSettings() {
 $("#settingsBtn").onclick = async () => {
   await loadSettings();
   const explicit = state.settings._explicit || [];
+  const locked = state.settings._locked || [];       // on another computer: programs, models and network
+  $("#advancedRemote").hidden = !locked.length;
   for (const el of $("#settingsForm").elements) {
     if (!el.name || !(el.name in state.settings)) continue;
+    el.disabled = locked.includes(el.name);
     if (DETECTED.includes(el.name) && !explicit.includes(el.name)) {
       el.value = "";
       el.placeholder = el.name === "ollama_model" ? (state.status?.ollama?.model || "") : state.settings[el.name];
@@ -167,7 +173,7 @@ $("#settingsBtn").onclick = async () => {
 $("#settingsDlg").addEventListener("close", async () => {
   if ($("#settingsDlg").returnValue !== "save") { applyDensity(state.settings.density); return; }   // cancelled
   const out = {};
-  for (const el of $("#settingsForm").elements) if (el.name) out[el.name] = el.value;
+  for (const el of $("#settingsForm").elements) if (el.name && !el.disabled) out[el.name] = el.value;
   state.settings = await api("/api/settings", out);
   $("#backend").value = state.settings.backend;
   toast("Settings saved");

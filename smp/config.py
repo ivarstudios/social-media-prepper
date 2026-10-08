@@ -76,6 +76,10 @@ DEFAULTS: dict = {
     "lan": "on",                   # "on": other computers on the network can open SMP too; "off": this one only
     "recent_folders": [],
 }
+# what a browser on another computer may change. The rest (programs, models, the Claude settings, the network) only
+# from the computer SMP runs on: SMP runs a program path as it is, and the Ollama address and Claude key decide
+# where the images go.
+FROM_ANY_COMPUTER = ("creator", "credit", "copyright", "language", "density", "backend", "recent_folders")
 OWN_OLLAMA_PORT = 11436
 
 

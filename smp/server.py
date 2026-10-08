@@ -7,10 +7,10 @@ import os
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Body, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from smp import __version__, brief, config, images, machine, network, picker, plan, store, vlm
@@ -292,6 +292,30 @@ def create_app(lan: bool = False) -> FastAPI:
             response.headers["Cache-Control"] = "no-cache"
         return response
 
+    @app.middleware("http")
+    async def own_pages_only(request, call_next):
+        # There's no login, so keep other web pages out (see network.py). A page from another site can't change
+        # anything here (a browser always says where a POST comes from), and a request must name this computer, or
+        # a page could point its own domain at this computer's address and read and change everything.
+        try:
+            host = urlsplit("//" + request.headers.get("host", "")).hostname or ""
+        except ValueError:
+            host = ""
+        if not network.is_own_name(host, lan):
+            return JSONResponse({"detail": "Open SMP by this computer's address or name"}, status_code=403)
+        origin = request.headers.get("origin")
+        if request.method not in ("GET", "HEAD", "OPTIONS") and origin is not None and \
+                origin.lower() != f"{request.url.scheme}://{request.headers['host']}".lower():
+            return JSONResponse({"detail": "Changes only from SMP's own page"}, status_code=403)
+        return await call_next(request)
+
+    def here(request: Request) -> bool:
+        return network.is_this_computer(request.client and request.client.host)
+
+    def this_computer_only(request: Request, what: str) -> None:
+        if not here(request):
+            raise HTTPException(403, f"{what} only on the computer SMP runs on")
+
     @app.get("/")
     def index():
         return FileResponse(STATIC / "index.html")
@@ -320,7 +344,7 @@ def create_app(lan: bool = False) -> FastAPI:
                "folders": {"tools": str(config.tools_dir()), "models": s["ollama_models_dir"],
                            "data": str(config.data_dir())},
                "pull": dict(PULL),
-               "network": {"on": lan, "here": network.is_this_computer(request.client and request.client.host),
+               "network": {"on": lan, "here": here(request),
                            "urls": [f"http://{ip}:{request.url.port or 80}/" for ip in network.lan_addresses()]
                            if lan else [],
                            "firewall": network.firewall_rule() if lan else None}}
@@ -341,7 +365,8 @@ def create_app(lan: bool = False) -> FastAPI:
         return out
 
     @app.post("/api/model/pull")
-    def pull_model(body: dict = Body(default={})):
+    def pull_model(request: Request, body: dict = Body(default={})):
+        this_computer_only(request, "Models are downloaded")
         if PULL.get("running"):
             raise HTTPException(409, "Already downloading")
         s = config.load()
@@ -364,20 +389,26 @@ def create_app(lan: bool = False) -> FastAPI:
         return {"started": be.model}
 
     @app.post("/api/claude-key")
-    def claude_key(body: dict = Body(...)):
+    def claude_key(request: Request, body: dict = Body(...)):
+        this_computer_only(request, "The Claude key is set")
         config.save({"claude_api_key": (body.get("key") or "").strip()})
         return {"saved": bool((body.get("key") or "").strip())}
 
     @app.get("/api/settings")
-    def get_settings():
+    def get_settings(request: Request):
+        """_locked: the settings this browser can't change, since it's on another computer."""
         s = config.load()
         s.pop("claude_api_key", None)        # never sent back to the page
         s["_explicit"] = sorted(config.stored())
+        s["_locked"] = [] if here(request) else [k for k in config.DEFAULTS if k not in config.FROM_ANY_COMPUTER]
         return s
 
     @app.post("/api/settings")
-    def post_settings(changes: dict = Body(...)):
+    def post_settings(request: Request, changes: dict = Body(...)):
         changes.pop("claude_api_key", None)  # set through /api/claude-key only
+        locked = [k for k in changes if k in config.DEFAULTS and k not in config.FROM_ANY_COMPUTER]
+        if locked and not here(request):
+            raise HTTPException(403, f"These are changed only on the computer SMP runs on: {', '.join(locked)}")
         s = config.save(changes)
         s.pop("claude_api_key", None)
         return s
@@ -385,7 +416,7 @@ def create_app(lan: bool = False) -> FastAPI:
     @app.post("/api/pick-folder")
     def pick_folder(request: Request, body: dict = Body(default={})):
         """Opens the operating system's folder dialog on this computer; waits until the user closes it."""
-        if not network.is_this_computer(request.client and request.client.host):
+        if not here(request):
             raise HTTPException(409, "The folder dialog only opens on the computer SMP runs on")
         return {"path": picker.pick_folder(body.get("initial") or "")}
 

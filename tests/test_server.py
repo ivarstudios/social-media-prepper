@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from smp import server, vlm
+from smp import config, network, server, vlm
 from smp.geo import Geocoder
 from tests.conftest import FakeBackend, make_image
 
@@ -19,7 +19,16 @@ def client(monkeypatch, exiftool_path, tmp_path):
     offline.download = lambda: None                  # never fetch place names in tests
     monkeypatch.setattr(server, "geocoder", lambda: offline)
     server.S = server.Session()
-    return TestClient(server.create_app(), client=("127.0.0.1", 50000)), fake     # a browser on this computer
+    # a browser on this computer
+    return TestClient(server.create_app(), base_url="http://127.0.0.1:8765", client=("127.0.0.1", 50000)), fake
+
+
+@pytest.fixture
+def other_computer(client, monkeypatch):
+    """A browser on another computer in the network, opening SMP at this computer's address, 192.0.2.10.
+    (client: only for its fake model and fresh session.)"""
+    monkeypatch.setattr(network, "own_names", lambda: frozenset({"192.0.2.10", "studio-pc"}))
+    return TestClient(server.create_app(lan=True), base_url="http://192.0.2.10:8765", client=("192.0.2.77", 50000))
 
 
 def wait_job(c):
@@ -121,9 +130,8 @@ def test_pick_folder_endpoint(client, monkeypatch):
     assert c.post("/api/pick-folder", json={}).json() == {"path": ""}
 
 
-def test_another_computer_browses_folders_instead_of_the_dialog(client, monkeypatch, tmp_path):
-    # client: only for its fake model and fresh session; this browser is on another computer
-    c = TestClient(server.create_app(lan=True), client=("192.0.2.77", 50000))
+def test_another_computer_browses_folders_instead_of_the_dialog(other_computer, monkeypatch, tmp_path):
+    c = other_computer
     monkeypatch.setattr(server.picker, "pick_folder", lambda initial: pytest.fail("dialog opened on this computer"))
     assert c.post("/api/pick-folder", json={}).status_code == 409
     net = c.get("/api/status").json()["network"]
@@ -136,6 +144,52 @@ def test_another_computer_browses_folders_instead_of_the_dialog(client, monkeypa
     assert r["images"] == 1 and [f["name"] for f in r["folders"]] == ["Selects"]
     assert c.get("/api/browse").json()["folders"]                  # the drives, or / and home
     assert c.get("/api/browse", params={"path": str(tmp_path / "nope")}).status_code == 404
+
+
+def test_another_computer_cant_change_programs_models_or_the_key(other_computer, monkeypatch, tmp_path):
+    c = other_computer
+    monkeypatch.setattr(vlm.OllamaBackend, "pull", lambda self, progress: pytest.fail("model downloaded"))
+    evil = str(tmp_path / "evil.exe")
+    for k, v in [("exiftool", evil), ("ollama_exe", evil), ("ollama_url", "http://192.0.2.99:11434"),
+                 ("claude_model", "x"), ("lan", "off")]:
+        r = c.post("/api/settings", json={"creator": "A", k: v})
+        assert r.status_code == 403 and k in r.json()["detail"], k
+    assert config.stored() == {}                              # nothing saved, not even the creator
+    assert c.post("/api/claude-key", json={"key": "sk-ant-someone-elses"}).status_code == 403
+    assert not c.get("/api/status").json()["claude_key_saved"]
+    assert c.post("/api/model/pull", json={"model": "registry.example/x"}).status_code == 403
+
+    # what the Settings form sends from there: its own fields only
+    s = c.get("/api/settings").json()
+    assert "exiftool" in s["_locked"] and "lan" in s["_locked"] and "creator" not in s["_locked"]
+    assert c.post("/api/settings", json={"creator": "A", "language": "sv", "backend": "claude"}).status_code == 200
+    assert config.stored() == {"creator": "A", "language": "sv", "backend": "claude"}
+
+
+def test_this_computer_can_change_everything(client):
+    c, _ = client
+    assert c.get("/api/settings").json()["_locked"] == []
+    assert c.post("/api/settings", json={"exiftool": "x", "lan": "off"}).status_code == 200
+    assert config.stored() == {"exiftool": "x", "lan": "off"}
+
+
+def test_only_this_computers_names_and_own_page(other_computer, client):
+    c, _ = client
+    # a page that points its own domain at this computer (DNS rebinding)
+    assert c.get("/api/status", headers={"Host": "rebind.example:8765"}).status_code == 403
+    assert c.get("/", headers={"Host": "localhost:8765"}).status_code == 200
+    # another site's page posting here from this computer's browser
+    assert c.post("/api/stop", headers={"Origin": "http://evil.example"}).status_code == 403
+    assert c.post("/api/stop", headers={"Origin": "null"}).status_code == 403
+    assert c.post("/api/stop", headers={"Origin": "http://127.0.0.1:8765"}).status_code == 200
+    assert c.post("/api/stop").status_code == 200                              # no browser: no Origin
+    # with the network off, only "localhost" and its addresses
+    assert c.get("/", headers={"Host": "192.0.2.10:8765"}).status_code == 403
+    # on the network: this computer's address and name
+    o = other_computer
+    assert o.get("/api/status").status_code == 200
+    assert o.get("/", headers={"Host": "STUDIO-PC:8765"}).status_code == 200
+    assert o.get("/", headers={"Host": "studio-pc.rebind.example:8765"}).status_code == 403
 
 
 def test_saving_a_brief_keeps_fields_the_form_doesnt_show(client, tmp_path):

@@ -81,9 +81,14 @@ the app does: scanning, briefs, generating and writing. The console window and *
 folders in the page, mapped network drives included), and the vision model runs there too. Everyone shares one
 session: the folder scanned and the job running are the same in every browser, so take turns.
 
-**There's no login.** Anyone who can open the address can do everything you can: browse this computer's folders,
-see the images, write into them, and change Settings. This is on by default, so keep it on only on a network
-where you trust everyone (a studio or home network) and turn it off anywhere else.
+**There's no login.** Anyone who can open the address can use the app as you do: browse this computer's folders,
+see the images, write into them and run the vision model (the Claude API too, if a key is saved). Only the
+computer SMP runs on can download models, save the Claude key or change the programs, models and network
+settings under *Advanced*. This is on by default, so keep it on only on a network where you trust everyone (a
+studio or home network) and turn it off anywhere else.
+
+Open SMP by this computer's address or its name. SMP turns away any other name, and changes sent from any page
+but its own, so a website you visit can't reach it through your browser.
 
 On Windows this needs a firewall rule, which the installer adds (Windows asks for admin rights once; `-NoNetwork`
 skips it). It lets other computers in on private and domain networks only, never on a public one: if SMP can't be

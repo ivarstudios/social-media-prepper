@@ -121,7 +121,9 @@ def main() -> None:
             if open_window(url):
                 winicon.brand_app_window()
         threading.Timer(1.2, show).start()
-    uvicorn.run(create_app(lan), host="0.0.0.0" if lan else "127.0.0.1", port=port, log_level="warning")
+    # no proxy in front: the address a request comes from is the browser's own, never a header's
+    uvicorn.run(create_app(lan), host="0.0.0.0" if lan else "127.0.0.1", port=port, log_level="warning",
+                proxy_headers=False)
 
 
 if __name__ == "__main__":

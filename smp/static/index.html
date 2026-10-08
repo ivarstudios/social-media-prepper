@@ -173,6 +173,7 @@
     </div>
     <h4>Advanced</h4>
     <p class="muted">Leave these empty to let SMP find them. The Claude key is set in Setup.</p>
+    <p class="muted" id="advancedRemote" hidden>These change only on the computer SMP runs on.</p>
     <div class="grid">
       <label>Local model (empty: best for this GPU)<input name="ollama_model"></label>
       <label>Ollama address<input name="ollama_url"></label>
@@ -198,6 +199,8 @@
     <div class="setup-head"><img src="/static/smp-icon.svg" alt=""><div><h3>Setup</h3>
       <p class="muted">IVAR SMP needs ExifTool and one vision model: a local one on this computer, or the Claude API.</p></div></div>
     <div class="check-row" id="suExif"></div>
+    <p class="muted" id="suRemote" hidden>You're on another computer: downloading a model and saving the Claude key
+      work only on the computer SMP runs on.</p>
     <h4>Vision model</h4>
     <div class="choice">
       <label class="check"><input type="radio" name="suBackend" value="ollama"> Local, on this computer</label>
@@ -212,7 +215,7 @@
     <div id="suClaude" class="panel" hidden>
       <p class="muted">Better-written text. Every image is uploaded to Anthropic and billed to your API account.</p>
       <div id="suKeyState"></div>
-      <div class="actions"><input type="password" id="suKey" placeholder="API key (sk-ant-...)" autocomplete="off">
+      <div class="actions" id="suKeyRow"><input type="password" id="suKey" placeholder="API key (sk-ant-...)" autocomplete="off">
         <button type="button" id="suKeyBtn">Save key</button></div>
     </div>
     <h4>Other computers</h4>
