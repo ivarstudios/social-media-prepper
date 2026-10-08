@@ -2,7 +2,8 @@
 
 # IVAR SMP (Social Media Prepper)
 
-*Made by IVAR Studios. Beta: download it, try it, tell us what breaks.*
+*Made by [IVAR Studios](https://ivar.studio). Beta: download it, try it, and
+[open an issue](https://github.com/ivarstudios/social-media-prepper/issues) when something breaks.*
 
 Point it at a folder of finished images (exports, phone pictures, screenshots), add a `brief.md` that says what
 the set is about, and a vision model writes title, caption, alt text, keywords and more **into the image files**.
@@ -20,7 +21,7 @@ It asks where three things go. Press Enter to keep the suggested folder, and eve
 
 | Folder | What | Suggested |
 |---|---|---|
-| Programs | Python (through `uv`), ExifTool and Ollama, each a pinned version checked against its known checksum; about 2 GB | `tools\` in the app folder |
+| Programs | Python (through `uv`), ExifTool and Ollama, each a pinned version (ExifTool and Ollama are checked against their known checksums); about 2 GB | `tools\` in the app folder |
 | Models | the vision model, 6 to 36 GB | `data\ollama-models\` in the app folder |
 | Data | settings, answer cache, thumbnails, place names, undo record | `data\` in the app folder |
 
@@ -80,9 +81,14 @@ the app does: scanning, briefs, generating and writing. The console window and *
 folders in the page, mapped network drives included), and the vision model runs there too. Everyone shares one
 session: the folder scanned and the job running are the same in every browser, so take turns.
 
+**There's no login.** Anyone who can open the address can do everything you can: browse this computer's folders,
+see the images, write into them, and change Settings. This is on by default, so keep it on only on a network
+where you trust everyone (a studio or home network) and turn it off anywhere else.
+
 On Windows this needs a firewall rule, which the installer adds (Windows asks for admin rights once; `-NoNetwork`
 skips it). It lets other computers in on private and domain networks only, never on a public one: if SMP can't be
-reached, check that Windows calls the network *Private*. To keep SMP to this computer, set *Other computers on
+reached, check that Windows calls the network *Private*. On a Mac or Linux, SMP listens on the network too, and
+whatever firewall the computer has decides who gets in. To keep SMP to this computer, set *Other computers on
 the network* in Settings to *Can't* and start SMP again.
 
 ## brief.md
@@ -160,8 +166,21 @@ folder.
 
 ## Development
 
+Run the installer once; it creates `.venv`. On a Mac or Linux, use `.venv/bin/python` instead.
+
 ```
 .venv\Scripts\python -m pytest            # tests (ExifTool needed; no GPU or API key)
 .venv\Scripts\python -m smp doctor        # what this computer has
 .venv\Scripts\python docs\icon\build_icon.py   # rebuild the icon files after editing docs\icon\smp-icon.svg
 ```
+
+Ideas that aren't built yet are in [`roadmap/`](roadmap/).
+
+## Built on
+
+- [ExifTool](https://exiftool.org) by Phil Harvey reads and writes the metadata.
+- [Ollama](https://ollama.com) runs the local [Qwen3-VL](https://github.com/QwenLM/Qwen3-VL) models; the
+  [Claude API](https://www.anthropic.com/api) is the other option.
+- Place names come from [GeoNames](https://www.geonames.org), licensed under
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- [uv](https://github.com/astral-sh/uv) installs Python and the app's packages.
